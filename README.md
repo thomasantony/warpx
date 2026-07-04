@@ -34,6 +34,25 @@ https://warpx.readthedocs.io
 
 To contact the developers, feel free to open an issue on this repo, or visit our discussions page at https://github.com/BLAST-WarpX/warpx/discussions
 
+## macOS uv Build
+
+Developers on macOS can build Python bindings with MPI and all CMake geometries without conda by using `uv`.
+Install the external runtime dependencies first, for example with Homebrew:
+
+```bash
+brew install libomp open-mpi uv
+```
+
+Then build, install into the repo-local `.venv`, and create reusable local wheels:
+
+```bash
+Tools/DevUtils/uv_build_python_mpi_all_geometries.sh
+```
+
+The script configures `build-uv` with `WarpX_PYTHON=ON`, `WarpX_MPI=ON`, `WarpX_COMPUTE=OMP`, and `WarpX_DIMS="1;2;3;RZ;RCYLINDER;RSPHERE"`.
+Wheels are written to `dist/`.
+The `amrex` and `pywarpx` wheels bundle the AMReX dylibs built by CMake; OpenMPI and OpenMP remain external runtime dependencies.
+
 ## Contributing
 
 [![AMReX](https://img.shields.io/static/v1?label="runs%20on"&message="AMReX"&color="blueviolet")](https://amrex-codes.github.io/)

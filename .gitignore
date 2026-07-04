@@ -29,6 +29,9 @@ Python/dist/
 Python/pywarpx.egg-info/
 _tmppythonbuild/
 pywarpx.egg-info/
+.venv/
+.uv-cache/
+dist/
 *.ipynb_checkpoints/
 
 ##########

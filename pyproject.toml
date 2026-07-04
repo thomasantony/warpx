@@ -7,6 +7,71 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "pywarpx"
+version = "26.06"
+description = "WarpX is an advanced electromagnetic Particle-In-Cell code."
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["license", "classifiers"]
+authors = [
+    { name = "Jean-Luc Vay, David P. Grote, Maxence Thévenet, Rémi Lehe, Andrew Myers, Weiqun Zhang, Axel Huebl, et al." },
+]
+maintainers = [
+    { name = "Axel Huebl, David Grote, Rémi Lehe" },
+]
+keywords = [
+    "WarpX",
+    "openscience",
+    "mpi",
+    "hpc",
+    "research",
+    "pic",
+    "particle-in-cell",
+    "plasma",
+    "laser-plasma",
+    "accelerator",
+    "modeling",
+    "simulation",
+]
+dependencies = [
+    "numpy>=1.15",
+    "periodictable~=1.5",
+    "picmistandard==0.34.0",
+    "mpi4py>=2.1.0",
+]
+
+[project.urls]
+Documentation = "https://warpx.readthedocs.io"
+Doxygen = "https://warpx.readthedocs.io/en/latest/_static/doxyhtml/index.html"
+Source = "https://github.com/BLAST-WarpX/warpx"
+Tracker = "https://github.com/BLAST-WarpX/warpx/issues"
+
+[project.optional-dependencies]
+all = [
+    "openPMD-api>=0.17.0",
+    "openPMD-viewer~=1.1",
+    "yt>=4.1.0",
+    "matplotlib",
+]
+
+[dependency-groups]
+build = [
+    "build>=1.2",
+    "cmake>=3.24.0",
+    "ninja",
+    "packaging>=23",
+    "pip",
+    "setuptools>=42",
+    "wheel",
+]
+test = [
+    "pytest",
+]
+
+[tool.uv]
+default-groups = ["build"]
+
 [tool.ruff.format]
 docstring-code-format = true
 
