@@ -11,6 +11,14 @@ from setuptools import Extension, find_packages, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 
+try:
+    from setuptools.command.bdist_wheel import bdist_wheel
+except ImportError:
+    try:
+        from wheel.bdist_wheel import bdist_wheel
+    except ImportError:
+        bdist_wheel = None
+
 
 class CopyPreBuild(build):
     def initialize_options(self):
@@ -53,6 +61,14 @@ class CopyPreBuild(build):
             dirs_exist_ok=True,
             ignore=shutil.ignore_patterns("diags", "diags.*"),
         )
+
+
+if bdist_wheel is not None:
+
+    class BinaryWheel(bdist_wheel):
+        def finalize_options(self):
+            bdist_wheel.finalize_options(self)
+            self.root_is_pure = False
 
 
 class CMakeExtension(Extension):
@@ -285,6 +301,8 @@ cmdclass = {}  # build extensions
 # externally pre-built: pick up pre-built WarpX libraries
 if PYWARPX_LIB_DIR:
     cmdclass = dict(build=CopyPreBuild)
+    if bdist_wheel is not None:
+        cmdclass["bdist_wheel"] = BinaryWheel
 # CMake: build WarpX libraries ourselves
 else:
     cmdclass = dict(build_ext=CMakeBuild)
