@@ -1,0 +1,157 @@
+# 3D physically scaled solar-wind plasma driven by a rotating magnetic field.
+#
+# This is a first-pass RMF current-drive setup. The box is a local 200 m cube
+# with periodic fields and particles, initialized with 5 cm^-3 solar-wind
+# electrons/protons drifting in +x at 400 km/s. A prescribed rotating,
+# softened dipole is applied as an external particle B field, together with
+# the inductive E field from dA/dt. The deposited plasma current evolves the
+# grid fields self-consistently, so diagnostics show the induced response.
+#
+# The applied RMF is not itself a grid field and is not depleted by the
+# plasma. For post-processing, add the analytic applied field to the output
+# grid fields if the total field is needed.
+
+my_constants.v_sw = 4.0e5
+my_constants.beta_sw = v_sw / clight
+my_constants.n_sw = 5.0e6
+
+# Typical near-coil parameters for an initial frequency sweep.
+# f_rmf = 3 kHz is above the proton gyrofrequency where B has fallen to
+# O(100 nT), but below the 5 cm^-3 electron plasma frequency.
+my_constants.B0 = 1.0e-3
+my_constants.a_dipole = 10.0
+my_constants.f_rmf = 3.0e3
+my_constants.omega_rmf = 2.0*pi*f_rmf
+
+# The nonlinear solver is sensitive to the driven particle response. For
+# this setup, dt = 1e-7 s reaches tens of steps but can diverge before 100,
+# while dt = 5e-8 s has been verified through 100 steps. This is still about
+# 1.85x larger than the 3D Yee light-wave CFL step for dx=6.25 m.
+my_constants.dt = 5.0e-8
+
+#################################
+####### GENERAL PARAMETERS ######
+#################################
+max_step = 100
+
+geometry.dims = 3
+geometry.prob_lo = -100.0 -100.0 -100.0
+geometry.prob_hi =  100.0  100.0  100.0
+amr.n_cell = 32 32 32
+amr.max_grid_size = 16
+amr.blocking_factor = 8
+amr.max_level = 0
+
+#################################
+####### Boundary condition ######
+#################################
+# The theta-implicit solver does not support PML. Periodic boundaries make
+# this an affordable local RMF/current-drive experiment rather than an open
+# solar-wind inflow chamber.
+boundary.field_lo = periodic periodic periodic
+boundary.field_hi = periodic periodic periodic
+
+boundary.particle_lo = periodic periodic periodic
+boundary.particle_hi = periodic periodic periodic
+
+#################################
+############ NUMERICS ###########
+#################################
+warpx.serialize_initial_conditions = 1
+warpx.verbose = 1
+warpx.const_dt = dt
+warpx.use_filter = 1
+
+algo.evolve_scheme = theta_implicit_em
+algo.maxwell_solver = Yee
+algo.particle_shape = 2
+algo.current_deposition = villasenor
+algo.field_gathering = energy-conserving
+
+implicit_evolve.theta = 0.5
+implicit_evolve.nonlinear_solver = newton
+newton.max_iterations = 20
+newton.verbose = false
+newton.relative_tolerance = 1.0e-8
+newton.absolute_tolerance = 0.0
+newton.require_convergence = false
+gmres.max_iterations = 120
+gmres.verbose_int = 0
+gmres.relative_tolerance = 1.0e-6
+gmres.absolute_tolerance = 0.0
+jacobian.pc_type = pc_curl_curl_mlmg
+pc_curl_curl_mlmg.verbose = false
+pc_curl_curl_mlmg.max_iter = 10
+pc_curl_curl_mlmg.relative_tolerance = 1.0e-4
+
+#################################
+############ RMF DRIVE ##########
+#################################
+# Softened vector-potential model:
+#   A = m(t) x r / (r^2 + a^2)^(3/2)
+#   B = curl(A)
+#   E = -dA/dt
+#
+# The magnetic moment rotates in the yz plane, making the central applied
+# field rotate perpendicular to the solar-wind flow direction.
+particles.B_ext_particle_init_style = parse_B_ext_particle_function
+particles.Bx_external_particle_function(x,y,z,t) = "3.0*x*(-B0*a_dipole**3*(y*cos(omega_rmf*t)+z*sin(omega_rmf*t)))/(x*x+y*y+z*z+a_dipole*a_dipole)**2.5"
+particles.By_external_particle_function(x,y,z,t) = "B0*a_dipole**3*cos(omega_rmf*t)/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5 - 3.0*y*B0*a_dipole**3*(y*cos(omega_rmf*t)+z*sin(omega_rmf*t))/(x*x+y*y+z*z+a_dipole*a_dipole)**2.5"
+particles.Bz_external_particle_function(x,y,z,t) = "B0*a_dipole**3*sin(omega_rmf*t)/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5 - 3.0*z*B0*a_dipole**3*(y*cos(omega_rmf*t)+z*sin(omega_rmf*t))/(x*x+y*y+z*z+a_dipole*a_dipole)**2.5"
+
+particles.E_ext_particle_init_style = parse_E_ext_particle_function
+particles.Ex_external_particle_function(x,y,z,t) = "B0*a_dipole**3*omega_rmf*(z*sin(omega_rmf*t)+y*cos(omega_rmf*t))/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5"
+particles.Ey_external_particle_function(x,y,z,t) = "-B0*a_dipole**3*omega_rmf*x*cos(omega_rmf*t)/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5"
+particles.Ez_external_particle_function(x,y,z,t) = "B0*a_dipole**3*omega_rmf*x*sin(omega_rmf*t)/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5"
+
+#################################
+############ PLASMA #############
+#################################
+particles.species_names = electrons protons
+particles.max_grid_crossings = 8
+
+electrons.charge = -q_e
+electrons.mass = m_e
+electrons.injection_style = NUniformPerCell
+electrons.num_particles_per_cell_each_dim = 1 1 1
+electrons.profile = constant
+electrons.density = n_sw
+electrons.xmin = -100.0
+electrons.xmax =  100.0
+electrons.ymin = -100.0
+electrons.ymax =  100.0
+electrons.zmin = -100.0
+electrons.zmax =  100.0
+electrons.momentum_distribution_type = gaussian
+electrons.ux_m = beta_sw
+electrons.ux_th = 4.4e-3
+electrons.uy_th = 4.4e-3
+electrons.uz_th = 4.4e-3
+
+protons.charge = q_e
+protons.mass = m_p
+protons.injection_style = NUniformPerCell
+protons.num_particles_per_cell_each_dim = 1 1 1
+protons.profile = constant
+protons.density = n_sw
+protons.xmin = -100.0
+protons.xmax =  100.0
+protons.ymin = -100.0
+protons.ymax =  100.0
+protons.zmin = -100.0
+protons.zmax =  100.0
+protons.momentum_distribution_type = gaussian
+protons.ux_m = beta_sw
+protons.ux_th = 1.5e-4
+protons.uy_th = 1.5e-4
+protons.uz_th = 1.5e-4
+
+#################################
+########## Diagnostics ##########
+#################################
+diagnostics.diags_names = diag1
+diag1.intervals = 100
+diag1.diag_type = Full
+diag1.fields_to_plot = Ex Ey Ez Bx By Bz jx jy jz rho rho_electrons rho_protons part_per_cell
+diag1.format = openpmd
+diag1.file_prefix = diags/solar_wind_rmf
