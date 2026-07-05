@@ -1,0 +1,119 @@
+# Explicit short-time validation run for the solar-wind RMF setup.
+#
+# This uses the same particles, domain, and prescribed RMF particle fields as
+# solar_wind_rmf.txt, but advances with the explicit Yee solver at dt=1 ns.
+# That is well below the 1 mT electron gyroperiod near the softened source
+# (~36 ns) and below the 3D light-wave CFL limit for dx=6.25 m. Use this to
+# compare early electron heating/current growth against the theta-implicit run.
+
+my_constants.v_sw = 4.0e5
+my_constants.beta_sw = v_sw / clight
+my_constants.n_sw = 5.0e6
+
+my_constants.B0 = 1.0e-3
+my_constants.a_dipole = 10.0
+my_constants.f_rmf = 3.0e3
+my_constants.omega_rmf = 2.0*pi*f_rmf
+my_constants.dt = 1.0e-9
+
+#################################
+####### GENERAL PARAMETERS ######
+#################################
+max_step = 500
+
+geometry.dims = 3
+geometry.prob_lo = -100.0 -100.0 -100.0
+geometry.prob_hi =  100.0  100.0  100.0
+amr.n_cell = 32 32 32
+amr.max_grid_size = 16
+amr.blocking_factor = 8
+amr.max_level = 0
+
+#################################
+####### Boundary condition ######
+#################################
+# Keep the same periodic box as the implicit comparison case so that
+# short-time differences are due to timestep/integrator, not boundaries.
+boundary.field_lo = periodic periodic periodic
+boundary.field_hi = periodic periodic periodic
+
+boundary.particle_lo = periodic periodic periodic
+boundary.particle_hi = periodic periodic periodic
+
+#################################
+############ NUMERICS ###########
+#################################
+warpx.serialize_initial_conditions = 1
+warpx.verbose = 1
+warpx.const_dt = dt
+warpx.use_filter = 1
+
+algo.maxwell_solver = Yee
+algo.particle_shape = 2
+algo.current_deposition = villasenor
+algo.field_gathering = energy-conserving
+
+#################################
+############ RMF DRIVE ##########
+#################################
+particles.B_ext_particle_init_style = parse_B_ext_particle_function
+particles.Bx_external_particle_function(x,y,z,t) = "3.0*x*(-B0*a_dipole**3*(y*cos(omega_rmf*t)+z*sin(omega_rmf*t)))/(x*x+y*y+z*z+a_dipole*a_dipole)**2.5"
+particles.By_external_particle_function(x,y,z,t) = "B0*a_dipole**3*cos(omega_rmf*t)/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5 - 3.0*y*B0*a_dipole**3*(y*cos(omega_rmf*t)+z*sin(omega_rmf*t))/(x*x+y*y+z*z+a_dipole*a_dipole)**2.5"
+particles.Bz_external_particle_function(x,y,z,t) = "B0*a_dipole**3*sin(omega_rmf*t)/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5 - 3.0*z*B0*a_dipole**3*(y*cos(omega_rmf*t)+z*sin(omega_rmf*t))/(x*x+y*y+z*z+a_dipole*a_dipole)**2.5"
+
+particles.E_ext_particle_init_style = parse_E_ext_particle_function
+particles.Ex_external_particle_function(x,y,z,t) = "B0*a_dipole**3*omega_rmf*(z*sin(omega_rmf*t)+y*cos(omega_rmf*t))/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5"
+particles.Ey_external_particle_function(x,y,z,t) = "-B0*a_dipole**3*omega_rmf*x*cos(omega_rmf*t)/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5"
+particles.Ez_external_particle_function(x,y,z,t) = "B0*a_dipole**3*omega_rmf*x*sin(omega_rmf*t)/(x*x+y*y+z*z+a_dipole*a_dipole)**1.5"
+
+#################################
+############ PLASMA #############
+#################################
+particles.species_names = electrons protons
+
+electrons.charge = -q_e
+electrons.mass = m_e
+electrons.injection_style = NUniformPerCell
+electrons.num_particles_per_cell_each_dim = 1 1 1
+electrons.profile = constant
+electrons.density = n_sw
+electrons.xmin = -100.0
+electrons.xmax =  100.0
+electrons.ymin = -100.0
+electrons.ymax =  100.0
+electrons.zmin = -100.0
+electrons.zmax =  100.0
+electrons.momentum_distribution_type = gaussian
+electrons.ux_m = beta_sw
+electrons.ux_th = 4.4e-3
+electrons.uy_th = 4.4e-3
+electrons.uz_th = 4.4e-3
+
+protons.charge = q_e
+protons.mass = m_p
+protons.injection_style = NUniformPerCell
+protons.num_particles_per_cell_each_dim = 1 1 1
+protons.profile = constant
+protons.density = n_sw
+protons.xmin = -100.0
+protons.xmax =  100.0
+protons.ymin = -100.0
+protons.ymax =  100.0
+protons.zmin = -100.0
+protons.zmax =  100.0
+protons.momentum_distribution_type = gaussian
+protons.ux_m = beta_sw
+protons.ux_th = 1.5e-4
+protons.uy_th = 1.5e-4
+protons.uz_th = 1.5e-4
+
+#################################
+########## Diagnostics ##########
+#################################
+diagnostics.diags_names = diag1
+diag1.intervals = 0:500:100
+diag1.dump_last_timestep = 1
+diag1.diag_type = Full
+diag1.fields_to_plot = Ex Ey Ez Bx By Bz jx jy jz rho rho_electrons rho_protons part_per_cell
+diag1.format = openpmd
+diag1.file_prefix = diags/solar_wind_rmf_explicit_check
