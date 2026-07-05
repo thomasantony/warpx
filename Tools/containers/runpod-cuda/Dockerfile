@@ -88,8 +88,9 @@ RUN cmake \
     cmake --build /tmp/warpx-build --target install -j "${NJOBS:-$(nproc)}" && \
     for geom in 1d 2d 3d rz rcylinder rsphere; do \
         target="$(find /opt/warpx/bin -maxdepth 1 -type f -name "warpx.${geom}.*" -print -quit)"; \
-        test -n "${target}"; \
-        ln -sf "${target}" "/opt/warpx/bin/warpx.${geom}"; \
+        if [ -n "${target}" ]; then \
+            ln -sf "${target}" "/opt/warpx/bin/warpx.${geom}"; \
+        fi; \
     done && \
     rm -rf /tmp/warpx-build /opt/warpx/lib/*.a
 
