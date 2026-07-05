@@ -1,0 +1,112 @@
+# 3D physically scaled solar-wind inflow past a compact magnetic obstacle.
+#
+# The solar wind enters from the lower x boundary with a typical 1 AU density
+# of 5 protons/cm^3 and a 400 km/s bulk speed. A softened magnetic dipole,
+# centered in the domain and oriented along z, initializes a roughly 1 mT
+# central field that decays away from the source.
+
+my_constants.v_sw = 4.0e5
+my_constants.beta_sw = v_sw / clight
+my_constants.n_sw = 5.0e6
+my_constants.B0 = 1.0e-3
+my_constants.a_dipole = 10.0
+my_constants.m_dipole = -B0 * a_dipole**3
+
+#################################
+####### GENERAL PARAMETERS ######
+#################################
+max_step = 400
+
+geometry.dims = 3
+geometry.prob_lo = -100.0 -100.0 -100.0
+geometry.prob_hi =  100.0  100.0  100.0
+amr.n_cell = 64 64 64
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+amr.max_level = 0
+
+#################################
+####### Boundary condition ######
+#################################
+boundary.field_lo = pml pml pml
+boundary.field_hi = pml pml pml
+warpx.pml_ncell = 8
+
+boundary.particle_lo = absorbing absorbing absorbing
+boundary.particle_hi = absorbing absorbing absorbing
+
+#################################
+############ NUMERICS ###########
+#################################
+warpx.serialize_initial_conditions = 1
+warpx.verbose = 1
+warpx.cfl = 0.95
+warpx.use_filter = 1
+
+algo.maxwell_solver = Yee
+algo.particle_shape = 2
+
+# Divergence cleaning is useful with open electromagnetic boundaries.
+warpx.do_dive_cleaning = 1
+warpx.do_divb_cleaning = 1
+
+#################################
+###### MAGNETIC OBSTACLE ########
+#################################
+warpx.B_ext_grid_init_style = parse_B_ext_grid_function
+warpx.Bx_external_grid_function(x,y,z) = "3.0 * m_dipole * x * z / (x*x + y*y + z*z + a_dipole*a_dipole)**2.5"
+warpx.By_external_grid_function(x,y,z) = "3.0 * m_dipole * y * z / (x*x + y*y + z*z + a_dipole*a_dipole)**2.5"
+warpx.Bz_external_grid_function(x,y,z) = "m_dipole * (3.0*z*z/(x*x + y*y + z*z + a_dipole*a_dipole)**2.5 - 1.0/(x*x + y*y + z*z + a_dipole*a_dipole)**1.5)"
+
+#################################
+############ PLASMA #############
+#################################
+particles.species_names = electrons protons
+
+electrons.charge = -q_e
+electrons.mass = m_e
+electrons.injection_style = NUniformPerCell
+electrons.num_particles_per_cell_each_dim = 1 1 1
+electrons.profile = constant
+electrons.density = n_sw
+electrons.do_continuous_injection = 1
+electrons.xmin = -100.0
+electrons.xmax =  100.0
+electrons.ymin = -100.0
+electrons.ymax =  100.0
+electrons.zmin = -100.0
+electrons.zmax =  100.0
+electrons.momentum_distribution_type = gaussian
+electrons.ux_m = beta_sw
+electrons.ux_th = 5.0e-5
+electrons.uy_th = 5.0e-5
+electrons.uz_th = 5.0e-5
+
+protons.charge = q_e
+protons.mass = m_p
+protons.injection_style = NUniformPerCell
+protons.num_particles_per_cell_each_dim = 1 1 1
+protons.profile = constant
+protons.density = n_sw
+protons.do_continuous_injection = 1
+protons.xmin = -100.0
+protons.xmax =  100.0
+protons.ymin = -100.0
+protons.ymax =  100.0
+protons.zmin = -100.0
+protons.zmax =  100.0
+protons.momentum_distribution_type = gaussian
+protons.ux_m = beta_sw
+protons.ux_th = 5.0e-5
+protons.uy_th = 5.0e-5
+protons.uz_th = 5.0e-5
+
+#################################
+########## Diagnostics ##########
+#################################
+diagnostics.diags_names = diag1
+diag1.intervals = 40
+diag1.diag_type = Full
+diag1.fields_to_plot = Ex Ey Ez Bx By Bz jx jy jz rho rho_electrons rho_protons part_per_cell
+diag1.format = openpmd
+diag1.file_prefix = diags/solar_wind_magnetic_obstacle
