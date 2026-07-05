@@ -851,6 +851,23 @@ public:
         bool use_eb_flags = true);
 
     /**
+     * \brief Add a parser-defined vector field to an existing grid field.
+     *
+     * This is used for externally driven source currents in full EM simulations.
+     */
+    void AddExternalFieldOnGridUsingParser (
+        const std::variant<warpx::fields::FieldType, std::string>& field,
+        amrex::ParserExecutor<4> const& fx_parser,
+        amrex::ParserExecutor<4> const& fy_parser,
+        amrex::ParserExecutor<4> const& fz_parser,
+        int lev, PatchType patch_type,
+        amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
+        bool use_eb_flags = true);
+
+    /** Add the user-defined external grid current to current_fp/current_cp. */
+    void AddExternalCurrentOnGrid ();
+
+    /**
      * \brief Load field values from a user-specified openPMD file,
      * for the fields Ex, Ey, Ez, Bx, By, Bz
      */

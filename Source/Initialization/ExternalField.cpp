@@ -180,6 +180,37 @@ ExternalFieldParams::ExternalFieldParams(const amrex::ParmParse& pp_warpx)
 
 
     //
+    //  External current density with parser
+    //
+    std::string str_Jx_ext_grid_function = "0.0";
+    std::string str_Jy_ext_grid_function = "0.0";
+    std::string str_Jz_ext_grid_function = "0.0";
+    const bool has_Jx_external_grid =
+        pp_warpx.query("Jx_external_grid_function(x,y,z,t)", str_Jx_ext_grid_function);
+    const bool has_Jy_external_grid =
+        pp_warpx.query("Jy_external_grid_function(x,y,z,t)", str_Jy_ext_grid_function);
+    const bool has_Jz_external_grid =
+        pp_warpx.query("Jz_external_grid_function(x,y,z,t)", str_Jz_ext_grid_function);
+    has_J_external_grid =
+        has_Jx_external_grid || has_Jy_external_grid || has_Jz_external_grid;
+
+    if (has_J_external_grid) {
+#ifdef WARPX_DIM_RZ
+        WARPX_ABORT_WITH_MESSAGE(
+            "External grid current parser does not work with RZ -- TO DO");
+#endif
+
+        Jxfield_parser = std::make_unique<amrex::Parser>(
+            utils::parser::makeParser(str_Jx_ext_grid_function,{"x","y","z","t"}));
+        Jyfield_parser = std::make_unique<amrex::Parser>(
+            utils::parser::makeParser(str_Jy_ext_grid_function,{"x","y","z","t"}));
+        Jzfield_parser = std::make_unique<amrex::Parser>(
+            utils::parser::makeParser(str_Jz_ext_grid_function,{"x","y","z","t"}));
+    }
+    //___________________________________________________________________________
+
+
+    //
     //  External fields from file
     //
     if (E_ext_grid_type == ExternalFieldType::read_from_file ||

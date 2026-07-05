@@ -822,6 +822,8 @@ void WarpX::SyncCurrentAndRho ()
         SyncRho();
     }
 
+    AddExternalCurrentOnGrid();
+
     // Reflect charge and current density over PEC boundaries, if needed.
     for (int lev = 0; lev <= finest_level; ++lev)
     {

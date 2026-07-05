@@ -1372,7 +1372,8 @@ void ComputeExternalFieldOnGridUsingParser_template (
     amrex::ParserExecutor<4> const& fz_parser,
     int lev, PatchType patch_type,
     amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
-    bool use_eb_flags)
+    bool use_eb_flags,
+    bool add_to_field)
 {
     auto &warpx = WarpX::GetInstance();
     auto const &geom = warpx.Geom(lev);
@@ -1446,8 +1447,11 @@ void ComputeExternalFieldOnGridUsingParser_template (
                 const amrex::Real fac_z = (1._rt - x_nodal_flag[2]) * dx_lev[2] * 0.5_rt;
                 const amrex::Real z = k*dx_lev[2] + real_box.lo(2) + fac_z;
 #endif
-                // Initialize the x-component of the field.
-                mfxfab(i,j,k) = fx_parser(x,y,z,t);
+                if (add_to_field) {
+                    mfxfab(i,j,k) += fx_parser(x,y,z,t);
+                } else {
+                    mfxfab(i,j,k) = fx_parser(x,y,z,t);
+                }
             },
             [=] AMREX_GPU_DEVICE (int i, int j, int k) {
 
@@ -1478,8 +1482,11 @@ void ComputeExternalFieldOnGridUsingParser_template (
                 const amrex::Real fac_z = (1._rt - y_nodal_flag[2]) * dx_lev[2] * 0.5_rt;
                 const amrex::Real z = k*dx_lev[2] + real_box.lo(2) + fac_z;
 #endif
-                // Initialize the y-component of the field.
-                mfyfab(i,j,k) = fy_parser(x,y,z,t);
+                if (add_to_field) {
+                    mfyfab(i,j,k) += fy_parser(x,y,z,t);
+                } else {
+                    mfyfab(i,j,k) = fy_parser(x,y,z,t);
+                }
             },
             [=] AMREX_GPU_DEVICE (int i, int j, int k) {
 
@@ -1510,8 +1517,11 @@ void ComputeExternalFieldOnGridUsingParser_template (
                 const amrex::Real fac_z = (1._rt - z_nodal_flag[2]) * dx_lev[2] * 0.5_rt;
                 const amrex::Real z = k*dx_lev[2] + real_box.lo(2) + fac_z;
 #endif
-                // Initialize the z-component of the field.
-                mfzfab(i,j,k) = fz_parser(x,y,z,t);
+                if (add_to_field) {
+                    mfzfab(i,j,k) += fz_parser(x,y,z,t);
+                } else {
+                    mfzfab(i,j,k) = fz_parser(x,y,z,t);
+                }
             }
         );
     }
@@ -1531,14 +1541,62 @@ void WarpX::ComputeExternalFieldOnGridUsingParser (
             std::get<warpx::fields::FieldType>(field),
             fx_parser, fy_parser, fz_parser,
             lev, patch_type, eb_update_field,
-            use_eb_flags);
+            use_eb_flags, false);
     }
     else{
         ComputeExternalFieldOnGridUsingParser_template<std::string> (
             std::get<std::string>(field),
             fx_parser, fy_parser, fz_parser,
             lev, patch_type, eb_update_field,
-            use_eb_flags);
+            use_eb_flags, false);
+    }
+}
+
+void WarpX::AddExternalFieldOnGridUsingParser (
+    const std::variant<warpx::fields::FieldType, std::string>& field,
+    amrex::ParserExecutor<4> const& fx_parser,
+    amrex::ParserExecutor<4> const& fy_parser,
+    amrex::ParserExecutor<4> const& fz_parser,
+    int lev, PatchType patch_type,
+    amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
+    bool use_eb_flags)
+{
+    if (std::holds_alternative<warpx::fields::FieldType>(field)){
+        ComputeExternalFieldOnGridUsingParser_template<warpx::fields::FieldType> (
+            std::get<warpx::fields::FieldType>(field),
+            fx_parser, fy_parser, fz_parser,
+            lev, patch_type, eb_update_field,
+            use_eb_flags, true);
+    }
+    else{
+        ComputeExternalFieldOnGridUsingParser_template<std::string> (
+            std::get<std::string>(field),
+            fx_parser, fy_parser, fz_parser,
+            lev, patch_type, eb_update_field,
+            use_eb_flags, true);
+    }
+}
+
+void WarpX::AddExternalCurrentOnGrid ()
+{
+    if (!m_p_ext_field_params->has_J_external_grid) { return; }
+
+    for (int lev = 0; lev <= finest_level; ++lev) {
+        AddExternalFieldOnGridUsingParser(
+            warpx::fields::FieldType::current_fp,
+            m_p_ext_field_params->Jxfield_parser->compile<4>(),
+            m_p_ext_field_params->Jyfield_parser->compile<4>(),
+            m_p_ext_field_params->Jzfield_parser->compile<4>(),
+            lev, PatchType::fine, m_eb_update_E);
+
+        if (lev > 0) {
+            AddExternalFieldOnGridUsingParser(
+                warpx::fields::FieldType::current_cp,
+                m_p_ext_field_params->Jxfield_parser->compile<4>(),
+                m_p_ext_field_params->Jyfield_parser->compile<4>(),
+                m_p_ext_field_params->Jzfield_parser->compile<4>(),
+                lev, PatchType::coarse, m_eb_update_E);
+        }
     }
 }
 

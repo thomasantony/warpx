@@ -57,6 +57,8 @@ struct ExternalFieldParams
     ExternalFieldType B_ext_grid_type = ExternalFieldType::default_zero;
     //! Initialization type for external electric field on the grid
     ExternalFieldType E_ext_grid_type = ExternalFieldType::default_zero;
+    //! Whether an externally applied grid current was specified
+    bool has_J_external_grid = false;
 
     //! User-defined parser to initialize x-component of the magnetic field on the grid
     std::unique_ptr<amrex::Parser> Bxfield_parser;
@@ -70,6 +72,12 @@ struct ExternalFieldParams
     std::unique_ptr<amrex::Parser> Eyfield_parser;
     //! User-defined parser to initialize z-component of the electric field on the grid
     std::unique_ptr<amrex::Parser> Ezfield_parser;
+    //! User-defined parser to apply x-component of the current density on the grid
+    std::unique_ptr<amrex::Parser> Jxfield_parser;
+    //! User-defined parser to apply y-component of the current density on the grid
+    std::unique_ptr<amrex::Parser> Jyfield_parser;
+    //! User-defined parser to apply z-component of the current density on the grid
+    std::unique_ptr<amrex::Parser> Jzfield_parser;
 
      //! Path of the file where external fields are stored
     std::string external_fields_path;
