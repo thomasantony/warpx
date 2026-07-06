@@ -82,9 +82,11 @@ RUN cmake \
         -DWarpX_DIMS="${WARPX_DIMS}" \
         -DWarpX_FFT=ON \
         -DWarpX_MPI=ON \
-        -DWarpX_OPENPMD=OFF \
+        -DWarpX_OPENPMD=ON \
         -DWarpX_PYTHON=OFF \
-        -DWarpX_QED_TABLE_GEN=OFF && \
+        -DWarpX_QED_TABLE_GEN=OFF \
+        -DopenPMD_USE_ADIOS2=OFF \
+        -DopenPMD_USE_HDF5=ON && \
     cmake --build /tmp/warpx-build --target install -j "${NJOBS:-$(nproc)}" && \
     for geom in 1d 2d 3d rz rcylinder rsphere; do \
         target="$(find /opt/warpx/bin -maxdepth 1 -type f -name "warpx.${geom}.*" -print -quit)"; \
