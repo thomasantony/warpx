@@ -75,7 +75,7 @@ warpx.Jz_external_grid_function(x,y,z,t) = "if(t<t_ramp,0.5*(1.0-cos(pi*t/t_ramp
 #################################
 ############ PLASMA #############
 #################################
-particles.species_names = electrons protons
+particles.species_names = electron
 
 electrons.charge = -q_e
 electrons.mass = m_e
@@ -141,6 +141,16 @@ diagnostics.diags_names = diag1
 diag1.intervals = 0:500:100
 diag1.dump_last_timestep = 1
 diag1.diag_type = Full
-diag1.fields_to_plot = Ex Ey Ez Bx By Bz jx jy jz rho rho_electrons rho_protons part_per_cell
+diag1.fields_to_plot = Ex Ey Ez Bx By Bz jx jy jz rho
 diag1.format = openpmd
-diag1.file_prefix = diags/solar_wind_rmf_explicit_coils
+diag1.file_prefix = diags/solar_wind_rmf_single_electron
+diag1.write_species = 0
+diag1.species = electron
+electron.charge = -q_e
+electron.mass = m_e
+electron.injection_style = "SingleParticle"
+electron.single_particle_pos = 0.0 10.0 0.0
+electron.single_particle_u = 0.0 0.0 0.0
+electron.single_particle_weight = 1.0
+
+# Validation: particle history should show azimuthal drift in the RMF rotation sense.

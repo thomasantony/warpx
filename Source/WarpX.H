@@ -840,6 +840,7 @@ public:
      * \param[in] patch_type PatchType on which the field is initialized (fine or coarse)
      * \param[in] eb_update_field flag indicating which gridpoints should be modified by this functions
      * \param[in] use_eb_flags (default:true) flag indicating if eb points should be excluded or not
+     * \param[in] parser_time optional time to pass to parser functions (default: t_new)
      */
     void ComputeExternalFieldOnGridUsingParser (
         const std::variant<warpx::fields::FieldType, std::string>& field,
@@ -848,7 +849,8 @@ public:
         amrex::ParserExecutor<4> const& fz_parser,
         int lev, PatchType patch_type,
         amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
-        bool use_eb_flags = true);
+        bool use_eb_flags = true,
+        std::optional<amrex::Real> parser_time = std::nullopt);
 
     /**
      * \brief Add a parser-defined vector field to an existing grid field.
@@ -862,7 +864,8 @@ public:
         amrex::ParserExecutor<4> const& fz_parser,
         int lev, PatchType patch_type,
         amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
-        bool use_eb_flags = true);
+        bool use_eb_flags = true,
+        std::optional<amrex::Real> parser_time = std::nullopt);
 
     /** Add the user-defined external grid current to current_fp/current_cp. */
     void AddExternalCurrentOnGrid ();

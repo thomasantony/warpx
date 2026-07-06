@@ -276,13 +276,14 @@ void HybridPICModel::InitData (const ablastr::fields::MultiFabRegister& fields)
         // if the current is time dependent which is what needs to be done to
         // write time independent fields on the first step.
         for (int lev = 0; lev <= warpx.finestLevel(); ++lev) {
+            amrex::Real const current_time = warpx.gett_old(lev) + 0.5_rt * warpx.getdt(lev);
             warpx.ComputeExternalFieldOnGridUsingParser(
                 FieldType::hybrid_current_fp_external,
                 m_J_external[0],
                 m_J_external[1],
                 m_J_external[2],
                 lev, PatchType::fine,
-                warpx.GetEBUpdateEFlag());
+                warpx.GetEBUpdateEFlag(), true, current_time);
         }
     }
 
@@ -298,13 +299,14 @@ void HybridPICModel::GetCurrentExternal ()
     auto& warpx = WarpX::GetInstance();
     for (int lev = 0; lev <= warpx.finestLevel(); ++lev)
     {
+        amrex::Real const current_time = warpx.gett_old(lev) + 0.5_rt * warpx.getdt(lev);
         warpx.ComputeExternalFieldOnGridUsingParser(
             FieldType::hybrid_current_fp_external,
             m_J_external[0],
             m_J_external[1],
             m_J_external[2],
             lev, PatchType::fine,
-            warpx.GetEBUpdateEFlag());
+            warpx.GetEBUpdateEFlag(), true, current_time);
     }
 }
 

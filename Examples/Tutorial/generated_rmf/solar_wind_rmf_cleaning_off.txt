@@ -143,4 +143,4 @@ diag1.dump_last_timestep = 1
 diag1.diag_type = Full
 diag1.fields_to_plot = Ex Ey Ez Bx By Bz jx jy jz rho rho_electrons rho_protons part_per_cell
 diag1.format = openpmd
-diag1.file_prefix = diags/solar_wind_rmf_explicit_coils
+diag1.file_prefix = diags/solar_wind_rmf_cleaning_off

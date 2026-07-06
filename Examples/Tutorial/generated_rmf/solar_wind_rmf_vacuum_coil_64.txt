@@ -25,12 +25,12 @@ my_constants.dt = 1.0e-9
 #################################
 ####### GENERAL PARAMETERS ######
 #################################
-max_step = 500
+max_step = 2857143
 
 geometry.dims = 3
 geometry.prob_lo = -100.0 -100.0 -100.0
 geometry.prob_hi =  100.0  100.0  100.0
-amr.n_cell = 32 32 32
+amr.n_cell = 64 64 64
 amr.max_grid_size = 16
 amr.blocking_factor = 8
 amr.max_level = 0
@@ -75,7 +75,7 @@ warpx.Jz_external_grid_function(x,y,z,t) = "if(t<t_ramp,0.5*(1.0-cos(pi*t/t_ramp
 #################################
 ############ PLASMA #############
 #################################
-particles.species_names = electrons protons
+particles.species_names = 
 
 electrons.charge = -q_e
 electrons.mass = m_e
@@ -138,9 +138,23 @@ protons.inflow_protons.uz_th = 1.5e-4
 ########## Diagnostics ##########
 #################################
 diagnostics.diags_names = diag1
-diag1.intervals = 0:500:100
+diag1.intervals = 0:100000000:1000
 diag1.dump_last_timestep = 1
 diag1.diag_type = Full
-diag1.fields_to_plot = Ex Ey Ez Bx By Bz jx jy jz rho rho_electrons rho_protons part_per_cell
+diag1.fields_to_plot = Ex Ey Ez Bx By Bz jx jy jz rho
 diag1.format = openpmd
-diag1.file_prefix = diags/solar_wind_rmf_explicit_coils
+diag1.file_prefix = diags/solar_wind_rmf_vacuum_coil_64
+diag1.write_species = 0
+
+warpx.reduced_diags_names = CenterProbe
+CenterProbe.type = FieldProbe
+CenterProbe.intervals = 1
+CenterProbe.integrate = 0
+CenterProbe.probe_geometry = Point
+CenterProbe.x_probe = 0.0
+CenterProbe.y_probe = 0.0
+CenterProbe.z_probe = 0.0
+
+# Validation: center |B_perp| should be about 0.84 * mu0*I_coil/(2*R_coil).
+# Validation: CenterProbe By/Bz phase gives RMF rotation sense and frequency.
+# Validation: late-time edge fields should not show PML ringing.
