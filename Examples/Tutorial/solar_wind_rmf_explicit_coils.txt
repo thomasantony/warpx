@@ -4,6 +4,12 @@
 # the x-z plane and drives By ~ cos(omega t); the other is in the x-y plane and
 # drives Bz ~ sin(omega t). The imposed source is a grid current, so Maxwell's
 # equations evolve the launched fields and the plasma current self-consistently.
+#
+# The coils are specified as an external magnetization M_ext rather than a
+# direct external current: WarpX fills M_ext on B-staggering and constructs
+# J_ext = curl(M_ext) with a Yee finite-difference curl, so the injected
+# current is discretely divergence-free (div(curl) == 0 to machine precision)
+# without needing divergence cleaning for this source term. See jext_impl_02.md.
 
 my_constants.v_sw = 4.0e5
 my_constants.beta_sw = v_sw / clight
@@ -19,6 +25,12 @@ my_constants.f_rmf = 7.0e2
 my_constants.omega_rmf = 2.0*pi*f_rmf
 my_constants.I_coil = 2.0*R_coil*B0/mu0
 my_constants.J0_coil = I_coil/(2.0*pi*w_coil*w_coil)
+# Amplitude of the external magnetization M_ext whose curl builds J_ext.
+# curl(M) scales like A_coil/w_coil, so A_coil = J0_coil*w_coil matches the
+# order of magnitude of the old direct-J current tube; this is the
+# recalibration knob to match B0 against a vacuum coil-only run (see
+# jext_impl_02.md / plasma_magnet_execution_plan.md Phase 0).
+my_constants.A_coil = J0_coil*w_coil
 my_constants.t_ramp = 1.0e-7
 my_constants.dt = 1.0e-9
 
@@ -64,13 +76,19 @@ warpx.do_divb_cleaning = 0
 #################################
 ########### RMF COILS ###########
 #################################
-# Smooth toroidal current tubes approximate finite coils on the grid. A short
-# raised-cosine current ramp avoids launching an artificial turn-on transient.
-# The y-normal coil lies in the x-z plane. The z-normal coil lies in the x-y
-# plane. The two drives are 90 degrees out of phase.
-warpx.Jx_external_grid_function(x,y,z,t) = "if(t<t_ramp,0.5*(1.0-cos(pi*t/t_ramp)),1.0)*(-J0_coil*z/sqrt(x*x+z*z+r_eps)*exp(-((sqrt(x*x+z*z)-R_coil)**2+y*y)/(2.0*w_coil*w_coil))*cos(omega_rmf*t) - J0_coil*y/sqrt(x*x+y*y+r_eps)*exp(-((sqrt(x*x+y*y)-R_coil)**2+z*z)/(2.0*w_coil*w_coil))*sin(omega_rmf*t))"
-warpx.Jy_external_grid_function(x,y,z,t) = "if(t<t_ramp,0.5*(1.0-cos(pi*t/t_ramp)),1.0)*J0_coil*x/sqrt(x*x+y*y+r_eps)*exp(-((sqrt(x*x+y*y)-R_coil)**2+z*z)/(2.0*w_coil*w_coil))*sin(omega_rmf*t)"
-warpx.Jz_external_grid_function(x,y,z,t) = "if(t<t_ramp,0.5*(1.0-cos(pi*t/t_ramp)),1.0)*J0_coil*x/sqrt(x*x+z*z+r_eps)*exp(-((sqrt(x*x+z*z)-R_coil)**2+y*y)/(2.0*w_coil*w_coil))*cos(omega_rmf*t)"
+# Smooth toroidal current tubes approximate finite coils on the grid, built as
+# J_ext = curl(M_ext) so the result is discretely divergence-free (Yee curl of
+# a B-staggered field). A short raised-cosine current ramp avoids launching an
+# artificial turn-on transient. The y-normal coil lies in the x-z plane and its
+# magnetization points along y; the z-normal coil lies in the x-y plane and its
+# magnetization points along z. The two drives are 90 degrees out of phase.
+#
+# M_y = A*exp(-y^2/(2 w^2)) * 1/2*(1 - tanh((rho_xz - R)/w)) * cos(omega t)
+# M_z = A*exp(-z^2/(2 w^2)) * 1/2*(1 - tanh((rho_xy - R)/w)) * sin(omega t)
+# with rho_xz = sqrt(x^2+z^2) (y-normal loop) and rho_xy = sqrt(x^2+y^2)
+# (z-normal loop).
+warpx.My_external_grid_function(x,y,z,t) = "if(t<t_ramp,0.5*(1.0-cos(pi*t/t_ramp)),1.0)*A_coil*exp(-y*y/(2.0*w_coil*w_coil))*0.5*(1.0-tanh((sqrt(x*x+z*z)-R_coil)/w_coil))*cos(omega_rmf*t)"
+warpx.Mz_external_grid_function(x,y,z,t) = "if(t<t_ramp,0.5*(1.0-cos(pi*t/t_ramp)),1.0)*A_coil*exp(-z*z/(2.0*w_coil*w_coil))*0.5*(1.0-tanh((sqrt(x*x+y*y)-R_coil)/w_coil))*sin(omega_rmf*t)"
 
 #################################
 ############ PLASMA #############
