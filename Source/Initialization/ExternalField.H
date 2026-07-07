@@ -79,6 +79,18 @@ struct ExternalFieldParams
     //! User-defined parser to apply z-component of the current density on the grid
     std::unique_ptr<amrex::Parser> Jzfield_parser;
 
+    //! Whether an externally applied grid magnetization was specified
+    bool has_M_external_grid = false;
+    //! User-defined parser for x-component of an external magnetization used to
+    //! construct a discretely divergence-free external current, J_ext = curl(M_ext)
+    std::unique_ptr<amrex::Parser> Mxfield_parser;
+    //! User-defined parser for y-component of an external magnetization used to
+    //! construct a discretely divergence-free external current, J_ext = curl(M_ext)
+    std::unique_ptr<amrex::Parser> Myfield_parser;
+    //! User-defined parser for z-component of an external magnetization used to
+    //! construct a discretely divergence-free external current, J_ext = curl(M_ext)
+    std::unique_ptr<amrex::Parser> Mzfield_parser;
+
      //! Path of the file where external fields are stored
     std::string external_fields_path;
 };

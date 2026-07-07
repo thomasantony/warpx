@@ -1364,9 +1364,18 @@ WarpX::InitLevelData (int lev, Real /*time*/)
     }
 }
 
-template<typename T>
-void ComputeExternalFieldOnGridUsingParser_template (
-    const T& field,
+/** Fill (or add into) three parser-defined vector field components, mfx/mfy/mfz,
+ *  on their own staggering, at the given level/patch/time. This is the common
+ *  implementation shared by ComputeExternalFieldOnGridUsingParser_template
+ *  (which resolves mfx/mfy/mfz from the WarpX field registry) and by any other
+ *  caller that already holds the destination MultiFab pointers directly (e.g.
+ *  a scratch/temporary field that is not registered, such as the M_ext used to
+ *  build a discretely divergence-free J_ext = curl(M_ext)).
+ */
+void FillFieldOnGridUsingParser (
+    amrex::MultiFab* mfx,
+    amrex::MultiFab* mfy,
+    amrex::MultiFab* mfz,
     amrex::ParserExecutor<4> const& fx_parser,
     amrex::ParserExecutor<4> const& fy_parser,
     amrex::ParserExecutor<4> const& fz_parser,
@@ -1390,11 +1399,6 @@ void ComputeExternalFieldOnGridUsingParser_template (
             dx_lev[idim] = dx_lev[idim] * refratio[idim];
         }
     }
-
-    using ablastr::fields::Direction;
-    amrex::MultiFab* mfx = warpx.m_fields.get(field, Direction{0}, lev);
-    amrex::MultiFab* mfy = warpx.m_fields.get(field, Direction{1}, lev);
-    amrex::MultiFab* mfz = warpx.m_fields.get(field, Direction{2}, lev);
 
     const amrex::IntVect x_nodal_flag = mfx->ixType().toIntVect();
     const amrex::IntVect y_nodal_flag = mfy->ixType().toIntVect();
@@ -1528,6 +1532,30 @@ void ComputeExternalFieldOnGridUsingParser_template (
     }
 }
 
+template<typename T>
+void ComputeExternalFieldOnGridUsingParser_template (
+    const T& field,
+    amrex::ParserExecutor<4> const& fx_parser,
+    amrex::ParserExecutor<4> const& fy_parser,
+    amrex::ParserExecutor<4> const& fz_parser,
+    int lev, PatchType patch_type,
+    amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
+    bool use_eb_flags,
+    bool add_to_field,
+    std::optional<amrex::Real> parser_time)
+{
+    auto &warpx = WarpX::GetInstance();
+
+    using ablastr::fields::Direction;
+    amrex::MultiFab* mfx = warpx.m_fields.get(field, Direction{0}, lev);
+    amrex::MultiFab* mfy = warpx.m_fields.get(field, Direction{1}, lev);
+    amrex::MultiFab* mfz = warpx.m_fields.get(field, Direction{2}, lev);
+
+    FillFieldOnGridUsingParser(
+        mfx, mfy, mfz, fx_parser, fy_parser, fz_parser,
+        lev, patch_type, eb_update_field, use_eb_flags, add_to_field, parser_time);
+}
+
 void WarpX::ComputeExternalFieldOnGridUsingParser (
     const std::variant<warpx::fields::FieldType, std::string>& field,
     amrex::ParserExecutor<4> const& fx_parser,
@@ -1582,26 +1610,152 @@ void WarpX::AddExternalFieldOnGridUsingParser (
 
 void WarpX::AddExternalCurrentOnGrid ()
 {
-    if (!m_p_ext_field_params->has_J_external_grid) { return; }
-
-    for (int lev = 0; lev <= finest_level; ++lev) {
-        amrex::Real const current_time = gett_old(lev) + 0.5_rt * getdt(lev);
-        AddExternalFieldOnGridUsingParser(
-            warpx::fields::FieldType::current_fp,
-            m_p_ext_field_params->Jxfield_parser->compile<4>(),
-            m_p_ext_field_params->Jyfield_parser->compile<4>(),
-            m_p_ext_field_params->Jzfield_parser->compile<4>(),
-            lev, PatchType::fine, m_eb_update_E, true, current_time);
-
-        if (lev > 0) {
+    if (m_p_ext_field_params->has_J_external_grid) {
+        for (int lev = 0; lev <= finest_level; ++lev) {
+            amrex::Real const current_time = gett_old(lev) + 0.5_rt * getdt(lev);
             AddExternalFieldOnGridUsingParser(
-                warpx::fields::FieldType::current_cp,
+                warpx::fields::FieldType::current_fp,
                 m_p_ext_field_params->Jxfield_parser->compile<4>(),
                 m_p_ext_field_params->Jyfield_parser->compile<4>(),
                 m_p_ext_field_params->Jzfield_parser->compile<4>(),
-                lev, PatchType::coarse, m_eb_update_E, true, current_time);
+                lev, PatchType::fine, m_eb_update_E, true, current_time);
+
+            if (lev > 0) {
+                AddExternalFieldOnGridUsingParser(
+                    warpx::fields::FieldType::current_cp,
+                    m_p_ext_field_params->Jxfield_parser->compile<4>(),
+                    m_p_ext_field_params->Jyfield_parser->compile<4>(),
+                    m_p_ext_field_params->Jzfield_parser->compile<4>(),
+                    lev, PatchType::coarse, m_eb_update_E, true, current_time);
+            }
         }
     }
+
+    // Additive, structural source term: J_ext = curl(M_ext). Independent of the
+    // direct Jx/Jy/Jz_external_grid_function path above.
+    AddExternalCurrentFromMOnGrid();
+}
+
+namespace {
+    /** Discrete Yee curl of a B-staggered vector field (Mx,My,Mz) onto the
+     *  current (E-type) staggering, added into (Jx,Jy,Jz):
+     *
+     *    Jx += dMz/dy - dMy/dz
+     *    Jy += dMx/dz - dMz/dx
+     *    Jz += dMy/dx - dMx/dy
+     *
+     *  This is exactly the discrete curl used elsewhere in the Yee algorithm to
+     *  advance E from B (Ampere's law), so div(curl(M)) == 0 to machine
+     *  precision on this mesh by construction (the discrete divergence and this
+     *  discrete curl are built from the same difference stencils and cancel
+     *  identically, independent of floating-point round-off in M itself).
+     */
+    void AddCurlOfMToCurrent (
+        amrex::MultiFab& Jx, amrex::MultiFab& Jy, amrex::MultiFab& Jz,
+        amrex::MultiFab const& Mx, amrex::MultiFab const& My, amrex::MultiFab const& Mz,
+        amrex::GpuArray<amrex::Real,3> const& dx_lev)
+    {
+#if defined(WARPX_DIM_3D)
+        amrex::Real const dxinv = 1._rt/dx_lev[0];
+        amrex::Real const dyinv = 1._rt/dx_lev[1];
+        amrex::Real const dzinv = 1._rt/dx_lev[2];
+
+        for (MFIter mfi(Jx, TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            const amrex::Box& tbx = mfi.tilebox(Jx.ixType().toIntVect());
+            const amrex::Box& tby = mfi.tilebox(Jy.ixType().toIntVect());
+            const amrex::Box& tbz = mfi.tilebox(Jz.ixType().toIntVect());
+
+            auto const& Jxfab = Jx.array(mfi);
+            auto const& Jyfab = Jy.array(mfi);
+            auto const& Jzfab = Jz.array(mfi);
+            auto const& Mxfab = Mx.const_array(mfi);
+            auto const& Myfab = My.const_array(mfi);
+            auto const& Mzfab = Mz.const_array(mfi);
+
+            amrex::ParallelFor(tbx, tby, tbz,
+                [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    Jxfab(i,j,k) += (Mzfab(i,j+1,k) - Mzfab(i,j,k)) * dyinv
+                                  - (Myfab(i,j,k+1) - Myfab(i,j,k)) * dzinv;
+                },
+                [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    Jyfab(i,j,k) += (Mxfab(i,j,k+1) - Mxfab(i,j,k)) * dzinv
+                                  - (Mzfab(i+1,j,k) - Mzfab(i,j,k)) * dxinv;
+                },
+                [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    Jzfab(i,j,k) += (Myfab(i+1,j,k) - Myfab(i,j,k)) * dxinv
+                                  - (Mxfab(i,j+1,k) - Mxfab(i,j,k)) * dyinv;
+                }
+            );
+        }
+#else
+        amrex::ignore_unused(Jx, Jy, Jz, Mx, My, Mz, dx_lev);
+        WARPX_ABORT_WITH_MESSAGE(
+            "M_external_grid_function (curl(M) -> J_ext) is currently only implemented for 3D.");
+#endif
+    }
+}
+
+void WarpX::AddExternalCurrentFromMOnGrid ()
+{
+    if (!m_p_ext_field_params->has_M_external_grid) { return; }
+
+#if !defined(WARPX_DIM_3D)
+    WARPX_ABORT_WITH_MESSAGE(
+        "M_external_grid_function (curl(M) -> J_ext) is currently only implemented for 3D.");
+#else
+    using ablastr::fields::Direction;
+
+    auto const Mx_parser = m_p_ext_field_params->Mxfield_parser->compile<4>();
+    auto const My_parser = m_p_ext_field_params->Myfield_parser->compile<4>();
+    auto const Mz_parser = m_p_ext_field_params->Mzfield_parser->compile<4>();
+
+    for (int lev = 0; lev <= finest_level; ++lev) {
+        amrex::Real const current_time = gett_old(lev) + 0.5_rt * getdt(lev);
+
+        auto const add_curl_m_on_patch = [&] (PatchType patch_type) {
+            warpx::fields::FieldType const b_field = (patch_type == PatchType::fine) ?
+                warpx::fields::FieldType::Bfield_fp : warpx::fields::FieldType::Bfield_cp;
+            warpx::fields::FieldType const j_field = (patch_type == PatchType::fine) ?
+                warpx::fields::FieldType::current_fp : warpx::fields::FieldType::current_cp;
+
+            amrex::MultiFab* Bx = m_fields.get(b_field, Direction{0}, lev);
+            amrex::MultiFab* By = m_fields.get(b_field, Direction{1}, lev);
+            amrex::MultiFab* Bz = m_fields.get(b_field, Direction{2}, lev);
+
+            // Scratch field for M_ext on B-staggering: not registered in the
+            // field register, since it is only needed transiently to build
+            // J_ext = curl(M_ext).
+            amrex::IntVect const ng(1);
+            amrex::MultiFab Mx(Bx->boxArray(), Bx->DistributionMap(), 1, ng);
+            amrex::MultiFab My(By->boxArray(), By->DistributionMap(), 1, ng);
+            amrex::MultiFab Mz(Bz->boxArray(), Bz->DistributionMap(), 1, ng);
+
+            FillFieldOnGridUsingParser(
+                &Mx, &My, &Mz, Mx_parser, My_parser, Mz_parser,
+                lev, patch_type, m_eb_update_E, false, false, current_time);
+
+            auto const &geom = Geom(lev);
+            auto dx_lev = geom.CellSizeArray();
+            amrex::IntVect const refratio = (lev > 0) ? WarpX::RefRatio(lev-1) : amrex::IntVect(1);
+            if (patch_type == PatchType::coarse) {
+                for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {
+                    dx_lev[idim] = dx_lev[idim] * refratio[idim];
+                }
+            }
+
+            amrex::MultiFab* Jx = m_fields.get(j_field, Direction{0}, lev);
+            amrex::MultiFab* Jy = m_fields.get(j_field, Direction{1}, lev);
+            amrex::MultiFab* Jz = m_fields.get(j_field, Direction{2}, lev);
+
+            AddCurlOfMToCurrent(*Jx, *Jy, *Jz, Mx, My, Mz, dx_lev);
+        };
+
+        add_curl_m_on_patch(PatchType::fine);
+        if (lev > 0) {
+            add_curl_m_on_patch(PatchType::coarse);
+        }
+    }
+#endif
 }
 
 void WarpX::CheckGuardCells()

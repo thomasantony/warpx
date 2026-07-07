@@ -211,6 +211,43 @@ ExternalFieldParams::ExternalFieldParams(const amrex::ParmParse& pp_warpx)
 
 
     //
+    //  External magnetization with parser: J_ext = curl(M_ext), constructed to be
+    //  discretely divergence-free on the Yee grid (preferred over a direct J_ext
+    //  parser for closed-loop external drives, e.g. RMF antenna coils).
+    //
+    std::string str_Mx_ext_grid_function = "0.0";
+    std::string str_My_ext_grid_function = "0.0";
+    std::string str_Mz_ext_grid_function = "0.0";
+    const bool has_Mx_external_grid =
+        pp_warpx.query("Mx_external_grid_function(x,y,z,t)", str_Mx_ext_grid_function);
+    const bool has_My_external_grid =
+        pp_warpx.query("My_external_grid_function(x,y,z,t)", str_My_ext_grid_function);
+    const bool has_Mz_external_grid =
+        pp_warpx.query("Mz_external_grid_function(x,y,z,t)", str_Mz_ext_grid_function);
+    has_M_external_grid =
+        has_Mx_external_grid || has_My_external_grid || has_Mz_external_grid;
+
+    if (has_M_external_grid) {
+#ifdef WARPX_DIM_RZ
+        WARPX_ABORT_WITH_MESSAGE(
+            "External grid magnetization parser does not work with RZ -- TO DO");
+#endif
+#ifndef WARPX_DIM_3D
+        WARPX_ABORT_WITH_MESSAGE(
+            "M_external_grid_function (curl(M) -> J_ext) is currently only implemented for 3D.");
+#endif
+
+        Mxfield_parser = std::make_unique<amrex::Parser>(
+            utils::parser::makeParser(str_Mx_ext_grid_function,{"x","y","z","t"}));
+        Myfield_parser = std::make_unique<amrex::Parser>(
+            utils::parser::makeParser(str_My_ext_grid_function,{"x","y","z","t"}));
+        Mzfield_parser = std::make_unique<amrex::Parser>(
+            utils::parser::makeParser(str_Mz_ext_grid_function,{"x","y","z","t"}));
+    }
+    //___________________________________________________________________________
+
+
+    //
     //  External fields from file
     //
     if (E_ext_grid_type == ExternalFieldType::read_from_file ||
