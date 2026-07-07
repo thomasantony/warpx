@@ -1610,9 +1610,28 @@ void WarpX::AddExternalFieldOnGridUsingParser (
 
 void WarpX::AddExternalCurrentOnGrid ()
 {
+    if (!m_p_ext_field_params->has_J_external_grid &&
+        !m_p_ext_field_params->has_M_external_grid) {
+        return;
+    }
+
+    bool const has_fluid_species = myfl && myfl->nSpecies() > 0;
+    if (mypc->nSpecies() == 0 && !has_fluid_species) {
+        using ablastr::fields::Direction;
+
+        for (int lev = 0; lev <= finest_level; ++lev) {
+            for (int idim = 0; idim < 3; ++idim) {
+                m_fields.get(warpx::fields::FieldType::current_fp, Direction{idim}, lev)->setVal(0.0_rt);
+                if (lev > 0) {
+                    m_fields.get(warpx::fields::FieldType::current_cp, Direction{idim}, lev)->setVal(0.0_rt);
+                }
+            }
+        }
+    }
+
     if (m_p_ext_field_params->has_J_external_grid) {
         for (int lev = 0; lev <= finest_level; ++lev) {
-            amrex::Real const current_time = gett_old(lev) + 0.5_rt * getdt(lev);
+            amrex::Real const current_time = gett_new(lev) + 0.5_rt * getdt(lev);
             AddExternalFieldOnGridUsingParser(
                 warpx::fields::FieldType::current_fp,
                 m_p_ext_field_params->Jxfield_parser->compile<4>(),
@@ -1710,7 +1729,7 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
     auto const Mz_parser = m_p_ext_field_params->Mzfield_parser->compile<4>();
 
     for (int lev = 0; lev <= finest_level; ++lev) {
-        amrex::Real const current_time = gett_old(lev) + 0.5_rt * getdt(lev);
+        amrex::Real const current_time = gett_new(lev) + 0.5_rt * getdt(lev);
 
         auto const add_curl_m_on_patch = [&] (PatchType patch_type) {
             warpx::fields::FieldType const b_field = (patch_type == PatchType::fine) ?
@@ -1721,14 +1740,20 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
             amrex::MultiFab* Bx = m_fields.get(b_field, Direction{0}, lev);
             amrex::MultiFab* By = m_fields.get(b_field, Direction{1}, lev);
             amrex::MultiFab* Bz = m_fields.get(b_field, Direction{2}, lev);
+            amrex::MultiFab* Jx = m_fields.get(j_field, Direction{0}, lev);
+            amrex::MultiFab* Jy = m_fields.get(j_field, Direction{1}, lev);
+            amrex::MultiFab* Jz = m_fields.get(j_field, Direction{2}, lev);
 
             // Scratch field for M_ext on B-staggering: not registered in the
             // field register, since it is only needed transiently to build
             // J_ext = curl(M_ext).
-            amrex::IntVect const ng(1);
+            amrex::IntVect const ng = Jx->nGrowVect();
             amrex::MultiFab Mx(Bx->boxArray(), Bx->DistributionMap(), 1, ng);
             amrex::MultiFab My(By->boxArray(), By->DistributionMap(), 1, ng);
             amrex::MultiFab Mz(Bz->boxArray(), Bz->DistributionMap(), 1, ng);
+            Mx.setVal(0.0_rt);
+            My.setVal(0.0_rt);
+            Mz.setVal(0.0_rt);
 
             FillFieldOnGridUsingParser(
                 &Mx, &My, &Mz, Mx_parser, My_parser, Mz_parser,
@@ -1742,10 +1767,6 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
                     dx_lev[idim] = dx_lev[idim] * refratio[idim];
                 }
             }
-
-            amrex::MultiFab* Jx = m_fields.get(j_field, Direction{0}, lev);
-            amrex::MultiFab* Jy = m_fields.get(j_field, Direction{1}, lev);
-            amrex::MultiFab* Jz = m_fields.get(j_field, Direction{2}, lev);
 
             AddCurlOfMToCurrent(*Jx, *Jy, *Jz, Mx, My, Mz, dx_lev);
         };

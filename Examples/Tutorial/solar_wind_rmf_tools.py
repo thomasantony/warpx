@@ -39,6 +39,13 @@ def _set_many(text: str, updates: dict[str, str]) -> str:
     return text
 
 
+def _remove_keys(text: str, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        pattern = re.compile(rf"^{re.escape(key)}\s*=.*\n?", re.MULTILINE)
+        text = pattern.sub("", text)
+    return text
+
+
 def _read_base(base_input: Path) -> str:
     return base_input.read_text()
 
@@ -89,13 +96,17 @@ def _with_common_rmf_overrides(text: str, *, prefix: str) -> str:
 
 
 def _without_plasma(text: str, *, prefix: str) -> str:
-    return _set_many(
-        _with_common_rmf_overrides(text, prefix=prefix),
-        {
-            "particles.species_names": "",
-            "diag1.fields_to_plot": "Ex Ey Ez Bx By Bz jx jy jz rho",
-            "diag1.write_species": "0",
-        },
+    return _remove_keys(
+        _set_many(
+            _with_common_rmf_overrides(text, prefix=prefix),
+            {
+                "diag1.fields_to_plot": "Ex Ey Ez Bx By Bz jx jy jz rho",
+                "diag1.write_species": "0",
+            },
+        ),
+        (
+            "particles.species_names",
+        ),
     )
 
 

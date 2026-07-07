@@ -18,7 +18,7 @@ class SolarWindRmfToolsTest(unittest.TestCase):
             vacuum = pair.vacuum_input.read_text()
 
         self.assertIn("particles.species_names = electrons protons", plasma)
-        self.assertIn("particles.species_names =", vacuum)
+        self.assertNotIn("particles.species_names", vacuum)
         self.assertIn("warpx.My_external_grid_function(x,y,z,t)", vacuum)
         self.assertIn("warpx.Mz_external_grid_function(x,y,z,t)", vacuum)
         self.assertNotIn("rho_electrons", vacuum)
@@ -36,13 +36,14 @@ class SolarWindRmfToolsTest(unittest.TestCase):
 
         self.assertIn("amr.n_cell = 64 64 64", text)
         self.assertIn(f"max_step = {expected_steps}", text)
-        # The RMF drive is now J_ext=curl(M_ext), so this source is
+        # The RMF drive is J_ext=curl(M_ext), so this source is
         # divergence-free on the Yee mesh by construction; see
         # test_jext_curl_divergence.py and jext_impl_02.md.
         self.assertIn("warpx.do_dive_cleaning = 0", text)
         self.assertIn("warpx.do_divb_cleaning = 0", text)
         self.assertIn("warpx.reduced_diags_names = CenterProbe", text)
         self.assertIn("CenterProbe.probe_geometry = Point", text)
+        self.assertNotIn("CenterProbe.interp_order = 0", text)
         self.assertTrue(
             math.isclose(
                 rmf.center_field_calibration_factor(
