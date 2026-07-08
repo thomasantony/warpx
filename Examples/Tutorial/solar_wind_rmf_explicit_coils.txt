@@ -24,13 +24,17 @@ my_constants.r_eps = 1.0e-12
 my_constants.f_rmf = 7.0e2
 my_constants.omega_rmf = 2.0*pi*f_rmf
 my_constants.I_coil = 2.0*R_coil*B0/mu0
-my_constants.J0_coil = I_coil/(2.0*pi*w_coil*w_coil)
+# Fraction of the magnetization plateau present on the coil axis (rho = 0).
+my_constants.g0_coil = 0.5*(1.0+tanh(R_coil/w_coil))
 # Amplitude of the external magnetization M_ext whose curl builds J_ext.
-# curl(M) scales like A_coil/w_coil, so A_coil = J0_coil*w_coil matches the
-# order of magnitude of the old direct-J current tube; this is the
-# recalibration knob to match B0 against a vacuum coil-only run (see
-# jext_impl_02.md / plasma_magnet_execution_plan.md Phase 0).
-my_constants.A_coil = J0_coil*w_coil
+# A magnetization loop carries total current integral(My(rho=0,y) dy)
+# = A_coil*sqrt(2*pi)*w_coil*g0_coil, so this normalization makes the coil
+# carry exactly I_coil. The continuum center-field geometry factor for the
+# tanh-shell profile is ~0.885 (a function of R_coil/w_coil only), so the
+# expected vacuum center amplitude is ~0.885*B0. Validated against the
+# Phase 0 vacuum coil run (measured/predicted = 1.0017; see
+# Docs/planning/phase0_vacuum_coil_test_handoff.md).
+my_constants.A_coil = I_coil/(sqrt(2.0*pi)*w_coil*g0_coil)
 my_constants.t_ramp = 1.0e-7
 my_constants.dt = 1.0e-9
 
