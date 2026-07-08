@@ -46,6 +46,18 @@ def _remove_keys(text: str, keys: tuple[str, ...]) -> str:
     return text
 
 
+def _with_quiet_runtime_overrides(text: str) -> str:
+    return _set_many(
+        text,
+        {
+            "warpx.verbose": "0",
+            "tiny_profiler.enabled": "false",
+            "tiny_profiler.memprof_enabled": "false",
+            "tiny_profiler.device_synchronize_around_region": "false",
+        },
+    )
+
+
 def _read_base(base_input: Path) -> str:
     return base_input.read_text()
 
@@ -91,13 +103,15 @@ def _two_period_steps(constants: dict[str, float]) -> int:
 
 
 def _with_common_rmf_overrides(text: str, *, prefix: str) -> str:
-    return _set_many(
-        text,
-        {
-            "warpx.do_dive_cleaning": "0",
-            "warpx.do_divb_cleaning": "0",
-            "diag1.file_prefix": f"diags/{prefix}",
-        },
+    return _with_quiet_runtime_overrides(
+        _set_many(
+            text,
+            {
+                "warpx.do_dive_cleaning": "0",
+                "warpx.do_divb_cleaning": "0",
+                "diag1.file_prefix": f"diags/{prefix}",
+            },
+        )
     )
 
 
@@ -137,21 +151,25 @@ def write_vacuum_pair(base_input: Path, output_dir: Path, stem: str = "solar_win
 
 def write_ab_cleaning_pair(base_input: Path, output_dir: Path) -> VacuumPair:
     base = _read_base(base_input)
-    cleaning_on = _set_many(
-        base,
-        {
-            "warpx.do_dive_cleaning": "1",
-            "warpx.do_divb_cleaning": "1",
-            "diag1.file_prefix": "diags/solar_wind_rmf_cleaning_on",
-        },
+    cleaning_on = _with_quiet_runtime_overrides(
+        _set_many(
+            base,
+            {
+                "warpx.do_dive_cleaning": "1",
+                "warpx.do_divb_cleaning": "1",
+                "diag1.file_prefix": "diags/solar_wind_rmf_cleaning_on",
+            },
+        )
     )
-    cleaning_off = _set_many(
-        base,
-        {
-            "warpx.do_dive_cleaning": "0",
-            "warpx.do_divb_cleaning": "0",
-            "diag1.file_prefix": "diags/solar_wind_rmf_cleaning_off",
-        },
+    cleaning_off = _with_quiet_runtime_overrides(
+        _set_many(
+            base,
+            {
+                "warpx.do_dive_cleaning": "0",
+                "warpx.do_divb_cleaning": "0",
+                "diag1.file_prefix": "diags/solar_wind_rmf_cleaning_off",
+            },
+        )
     )
     on_path = _write(output_dir / "solar_wind_rmf_cleaning_on.txt", cleaning_on)
     off_path = _write(output_dir / "solar_wind_rmf_cleaning_off.txt", cleaning_off)

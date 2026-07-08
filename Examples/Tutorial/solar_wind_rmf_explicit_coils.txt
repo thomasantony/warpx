@@ -65,9 +65,12 @@ boundary.particle_hi = absorbing absorbing absorbing
 ############ NUMERICS ###########
 #################################
 warpx.serialize_initial_conditions = 1
-warpx.verbose = 1
+warpx.verbose = 0
 warpx.const_dt = dt
 warpx.use_filter = 1
+tiny_profiler.enabled = false
+tiny_profiler.memprof_enabled = false
+tiny_profiler.device_synchronize_around_region = false
 
 algo.maxwell_solver = Yee
 algo.particle_shape = 2

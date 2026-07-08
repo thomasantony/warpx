@@ -10,6 +10,12 @@ BASE = Path(__file__).resolve().parents[1] / "solar_wind_rmf_explicit_coils.txt"
 
 
 class SolarWindRmfToolsTest(unittest.TestCase):
+    def assertQuietRuntimeOverrides(self, text):
+        self.assertIn("warpx.verbose = 0", text)
+        self.assertIn("tiny_profiler.enabled = false", text)
+        self.assertIn("tiny_profiler.memprof_enabled = false", text)
+        self.assertIn("tiny_profiler.device_synchronize_around_region = false", text)
+
     def test_vacuum_twin_removes_plasma_and_preserves_drive(self):
         with tempfile.TemporaryDirectory() as tmp:
             pair = rmf.write_vacuum_pair(BASE, Path(tmp), "smoke")
@@ -25,6 +31,8 @@ class SolarWindRmfToolsTest(unittest.TestCase):
         self.assertNotIn("rho_protons", vacuum)
         self.assertIn("diag1.file_prefix = diags/smoke_plasma", plasma)
         self.assertIn("diag1.file_prefix = diags/smoke_vacuum", vacuum)
+        self.assertQuietRuntimeOverrides(plasma)
+        self.assertQuietRuntimeOverrides(vacuum)
 
     def test_vacuum_coil_validation_encodes_two_period_probe_and_cleaning_off(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -44,6 +52,7 @@ class SolarWindRmfToolsTest(unittest.TestCase):
         self.assertIn("warpx.reduced_diags_names = CenterProbe", text)
         self.assertIn("CenterProbe.probe_geometry = Point", text)
         self.assertNotIn("CenterProbe.interp_order = 0", text)
+        self.assertQuietRuntimeOverrides(text)
         self.assertTrue(
             math.isclose(
                 rmf.center_field_calibration_factor(
@@ -79,6 +88,7 @@ class SolarWindRmfToolsTest(unittest.TestCase):
         self.assertIn("electron.single_particle_pos = 0.0 10.0 0.0", text)
         self.assertIn("electron.single_particle_u = 0.0 0.0 0.0", text)
         self.assertIn("diag1.species = electron", text)
+        self.assertQuietRuntimeOverrides(text)
 
     def test_benchmark_input_matches_requested_size_ppc_and_steps(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -99,6 +109,7 @@ class SolarWindRmfToolsTest(unittest.TestCase):
             "diag1.file_prefix = diags/solar_wind_rmf_benchmark_fp64_a100",
             text,
         )
+        self.assertQuietRuntimeOverrides(text)
 
 
 if __name__ == "__main__":
