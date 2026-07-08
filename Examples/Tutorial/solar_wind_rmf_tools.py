@@ -64,6 +64,12 @@ def parse_constants(text: str) -> dict[str, float]:
         "q_e": QE,
         "m_e": ME,
         "m_p": MP,
+        "sqrt": math.sqrt,
+        "tanh": math.tanh,
+        "exp": math.exp,
+        "sin": math.sin,
+        "cos": math.cos,
+        "abs": abs,
     }
     parsed: dict[str, float] = {}
     for line in text.splitlines():
@@ -190,7 +196,8 @@ def write_vacuum_coil_validation(base_input: Path, output_dir: Path) -> Path:
     )
     text = _with_center_probe(text)
     text += (
-        "\n# Validation: center |B_perp| should be about 0.84 * mu0*I_coil/(2*R_coil).\n"
+        "\n# Validation: center |B_perp| should be about 0.885 * mu0*I_coil/(2*R_coil)\n"
+        "# (tanh-shell M_ext geometry factor; see phase0_vacuum_coil_test_handoff.md).\n"
         "# Validation: CenterProbe By/Bz phase gives RMF rotation sense and frequency.\n"
         "# Validation: late-time edge fields should not show PML ringing.\n"
     )

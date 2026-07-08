@@ -55,6 +55,19 @@ class SolarWindRmfToolsTest(unittest.TestCase):
                 rel_tol=1.0e-12,
             )
         )
+        self.assertIn(
+            "my_constants.A_coil = I_coil/(sqrt(2.0*pi)*w_coil*g0_coil)", text
+        )
+        self.assertNotIn("J0_coil", text)
+        self.assertIn("0.885 * mu0*I_coil/(2*R_coil)", text)
+        g0 = 0.5 * (1.0 + math.tanh(constants["R_coil"] / constants["w_coil"]))
+        self.assertTrue(
+            math.isclose(
+                constants["A_coil"],
+                constants["I_coil"] / (math.sqrt(2.0 * math.pi) * constants["w_coil"] * g0),
+                rel_tol=1.0e-12,
+            )
+        )
 
     def test_single_electron_validation_places_particle_at_half_radius(self):
         with tempfile.TemporaryDirectory() as tmp:
