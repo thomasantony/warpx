@@ -3,10 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from Examples.Tutorial import solar_wind_rmf_tools as rmf
+from SolarWindRMF import solar_wind_rmf_tools as rmf
 
 
-BASE = Path(__file__).resolve().parents[1] / "solar_wind_rmf_explicit_coils.txt"
+BASE = Path(__file__).resolve().parents[2] / "SolarWindRMF" / "solar_wind_rmf_explicit_coils.txt"
 
 
 class SolarWindRmfToolsTest(unittest.TestCase):
@@ -60,7 +60,7 @@ class SolarWindRmfToolsTest(unittest.TestCase):
                     r_coil=constants["R_coil"],
                     i_coil=constants["I_coil"],
                 ),
-                1.0,
+                1.0 / constants["center_field_geometry_factor"],
                 rel_tol=1.0e-12,
             )
         )
@@ -68,12 +68,34 @@ class SolarWindRmfToolsTest(unittest.TestCase):
             "my_constants.A_coil = I_coil/(sqrt(2.0*pi)*w_coil*g0_coil)", text
         )
         self.assertNotIn("J0_coil", text)
-        self.assertIn("0.885 * mu0*I_coil/(2*R_coil)", text)
+        self.assertIn("target center |B_perp| should be B0", text)
         g0 = 0.5 * (1.0 + math.tanh(constants["R_coil"] / constants["w_coil"]))
         self.assertTrue(
             math.isclose(
                 constants["A_coil"],
                 constants["I_coil"] / (math.sqrt(2.0 * math.pi) * constants["w_coil"] * g0),
+                rel_tol=1.0e-12,
+            )
+        )
+        self.assertTrue(
+            math.isclose(
+                rmf.center_field_target_factor(
+                    b0=constants["B0"],
+                    r_coil=constants["R_coil"],
+                    i_coil=constants["I_coil"],
+                    center_field_geometry_factor=constants["center_field_geometry_factor"],
+                ),
+                1.0,
+                rel_tol=1.0e-12,
+            )
+        )
+        self.assertTrue(
+            math.isclose(
+                constants["I_coil"],
+                2.0
+                * constants["R_coil"]
+                * constants["B0"]
+                / (rmf.MU0 * constants["center_field_geometry_factor"]),
                 rel_tol=1.0e-12,
             )
         )

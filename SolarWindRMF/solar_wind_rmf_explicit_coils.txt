@@ -17,23 +17,24 @@ my_constants.n_sw = 5.0e6
 my_constants.flux_sw = n_sw * v_sw
 my_constants.inflow_ppc = 0.05
 
+# Target vacuum rotating magnetic-field amplitude at the center of the coil.
 my_constants.B0 = 1.0e-5
 my_constants.R_coil = 20.0
 my_constants.w_coil = 8.0
 my_constants.r_eps = 1.0e-12
 my_constants.f_rmf = 7.0e2
 my_constants.omega_rmf = 2.0*pi*f_rmf
-my_constants.I_coil = 2.0*R_coil*B0/mu0
+my_constants.center_field_geometry_factor = 0.885
+my_constants.I_coil = 2.0*R_coil*B0/(mu0*center_field_geometry_factor)
 # Fraction of the magnetization plateau present on the coil axis (rho = 0).
 my_constants.g0_coil = 0.5*(1.0+tanh(R_coil/w_coil))
 # Amplitude of the external magnetization M_ext whose curl builds J_ext.
 # A magnetization loop carries total current integral(My(rho=0,y) dy)
-# = A_coil*sqrt(2*pi)*w_coil*g0_coil, so this normalization makes the coil
-# carry exactly I_coil. The continuum center-field geometry factor for the
-# tanh-shell profile is ~0.885 (a function of R_coil/w_coil only), so the
-# expected vacuum center amplitude is ~0.885*B0. Validated against the
-# Phase 0 vacuum coil run (measured/predicted = 1.0017; see
-# Docs/planning/phase0_vacuum_coil_test_handoff.md).
+# = A_coil*sqrt(2*pi)*w_coil*g0_coil, so this normalization makes the coil carry
+# exactly I_coil. The tanh-shell center-field geometry factor is approximately
+# 0.885 for R_coil/w_coil = 2.5, so I_coil is scaled by 1/0.885 relative to the
+# thin-loop mu0*I/(2R) estimate. With this input convention, B0 is the target
+# vacuum center field, not a pre-geometry source scale.
 my_constants.A_coil = I_coil/(sqrt(2.0*pi)*w_coil*g0_coil)
 my_constants.t_ramp = 1.0e-7
 my_constants.dt = 1.0e-9
