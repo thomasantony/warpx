@@ -17,6 +17,7 @@ Useful build arguments:
 ```bash
 docker build -f Tools/containers/runpod-cuda/Dockerfile \
     --build-arg NJOBS=16 \
+    --build-arg AMREX_CUDA_ARCH="8.0;8.6;8.9+PTX" \
     --build-arg CMAKE_CUDA_ARCHITECTURES="75;80;86;89;90" \
     -t warpx-cuda-runpod .
 ```

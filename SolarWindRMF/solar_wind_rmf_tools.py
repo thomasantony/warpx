@@ -46,6 +46,13 @@ def _remove_keys(text: str, keys: tuple[str, ...]) -> str:
     return text
 
 
+def _remove_prefixes(text: str, prefixes: tuple[str, ...]) -> str:
+    for prefix in prefixes:
+        pattern = re.compile(rf"^{re.escape(prefix)}\..*\n?", re.MULTILINE)
+        text = pattern.sub("", text)
+    return text
+
+
 def _with_quiet_runtime_overrides(text: str) -> str:
     return _set_many(
         text,
@@ -130,17 +137,20 @@ def _with_common_rmf_overrides(text: str, *, prefix: str) -> str:
 
 
 def _without_plasma(text: str, *, prefix: str) -> str:
-    return _remove_keys(
-        _set_many(
-            _with_common_rmf_overrides(text, prefix=prefix),
-            {
-                "diag1.fields_to_plot": "Ex Ey Ez Bx By Bz jx jy jz rho",
-                "diag1.write_species": "0",
-            },
+    return _remove_prefixes(
+        _remove_keys(
+            _set_many(
+                _with_common_rmf_overrides(text, prefix=prefix),
+                {
+                    "diag1.fields_to_plot": "Ex Ey Ez Bx By Bz jx jy jz rho",
+                    "diag1.write_species": "0",
+                },
+            ),
+            (
+                "particles.species_names",
+            ),
         ),
-        (
-            "particles.species_names",
-        ),
+        ("electrons", "protons"),
     )
 
 
