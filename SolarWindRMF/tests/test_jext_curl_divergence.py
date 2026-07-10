@@ -26,8 +26,11 @@ def yee_curl_M_to_J(Mx, My, Mz, dx, dy, dz):
         Jz(i,j,k) = (My(i+1,j,k) - My(i,j,k)) / dx - (Mx(i,j+1,k) - Mx(i,j,k)) / dy
 
     Arrays are indexed [i, j, k] with one extra guard point in each direction
-    beyond the interior region that will be evaluated, matching the ng=1
-    scratch fields allocated around Mx/My/Mz in WarpX.
+    beyond the interior region that will be evaluated.  Their logical indices
+    have the production B staggering: Mx=(node, cell, cell),
+    My=(cell, node, cell), and Mz=(cell, cell, node).  Equal numpy shapes are
+    used only to keep the guard-cell audit compact; the coordinate offsets are
+    applied explicitly when the analytic profile is sampled below.
     """
     nx, ny, nz = Mx.shape[0] - 1, My.shape[1] - 1, Mz.shape[2] - 1
     # Interior region where all forward differences below are well defined.
@@ -90,7 +93,8 @@ class JextCurlDivergenceTest(unittest.TestCase):
 
     def test_divergence_of_curl_is_zero_for_rmf_coil_profile(self):
         # Same functional form as the RMF coil M_y/M_z profiles in
-        # solar_wind_rmf_explicit_coils.txt, sampled on a small 3D grid.
+        # solar_wind_rmf_explicit_coils.txt, sampled at the production Yee
+        # locations rather than at a shared cell center.
         n = 16
         ng = 1
         dx = dy = dz = 1.0
@@ -100,21 +104,27 @@ class JextCurlDivergenceTest(unittest.TestCase):
         t = 0.3
         omega_rmf = 1.0
 
-        idx = np.arange(-ng, n + ng)
-        x = (idx + 0.5) * dx - 0.5 * n * dx
-        y = (idx + 0.5) * dy - 0.5 * n * dy
-        z = (idx + 0.5) * dz - 0.5 * n * dz
-        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+        index = np.arange(-ng, n + ng)
+        node_x = index * dx - 0.5 * n * dx
+        node_y = index * dy - 0.5 * n * dy
+        node_z = index * dz - 0.5 * n * dz
+        cell_x = node_x + 0.5 * dx
+        cell_y = node_y + 0.5 * dy
+        cell_z = node_z + 0.5 * dz
 
-        rho_xz = np.sqrt(X * X + Z * Z)
-        rho_xy = np.sqrt(X * X + Y * Y)
+        # Mx=(node,cell,cell), My=(cell,node,cell), Mz=(cell,cell,node).
+        Mx_x, Mx_y, Mx_z = np.meshgrid(node_x, cell_y, cell_z, indexing="ij")
+        My_x, My_y, My_z = np.meshgrid(cell_x, node_y, cell_z, indexing="ij")
+        Mz_x, Mz_y, Mz_z = np.meshgrid(cell_x, cell_y, node_z, indexing="ij")
 
-        Mx = np.zeros_like(X)
-        My = (A_coil * np.exp(-Y * Y / (2.0 * w_coil * w_coil))
-              * 0.5 * (1.0 - np.tanh((rho_xz - R_coil) / w_coil))
+        Mx = np.zeros_like(Mx_x)
+        My = (A_coil * np.exp(-My_y * My_y / (2.0 * w_coil * w_coil))
+              * 0.5 * (1.0 - np.tanh(
+                  (np.sqrt(My_x * My_x + My_z * My_z) - R_coil) / w_coil))
               * math.cos(omega_rmf * t))
-        Mz = (A_coil * np.exp(-Z * Z / (2.0 * w_coil * w_coil))
-              * 0.5 * (1.0 - np.tanh((rho_xy - R_coil) / w_coil))
+        Mz = (A_coil * np.exp(-Mz_z * Mz_z / (2.0 * w_coil * w_coil))
+              * 0.5 * (1.0 - np.tanh(
+                  (np.sqrt(Mz_x * Mz_x + Mz_y * Mz_y) - R_coil) / w_coil))
               * math.sin(omega_rmf * t))
 
         self._check_zero_divergence(Mx, My, Mz, dx, dy, dz)
