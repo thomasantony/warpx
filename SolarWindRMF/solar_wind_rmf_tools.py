@@ -58,6 +58,7 @@ def _with_quiet_runtime_overrides(text: str) -> str:
         text,
         {
             "warpx.verbose": "0",
+            "warpx.do_device_synchronize": "0",
             "tiny_profiler.enabled": "false",
             "tiny_profiler.memprof_enabled": "false",
             "tiny_profiler.device_synchronize_around_region": "false",

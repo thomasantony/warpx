@@ -56,6 +56,7 @@ class SolarWindRmfToolsTest(unittest.TestCase):
         self.assertIn("warpx.reduced_diags_names = CenterProbe", text)
         self.assertIn("CenterProbe.probe_geometry = Point", text)
         self.assertNotIn("CenterProbe.interp_order = 0", text)
+        self.assertIn("warpx.do_device_synchronize = 0", text)
         self.assertQuietRuntimeOverrides(text)
         self.assertTrue(
             math.isclose(
