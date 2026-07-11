@@ -1675,6 +1675,13 @@ namespace {
         amrex::GpuArray<amrex::Real,3> const& dx_lev)
     {
 #if defined(WARPX_DIM_3D)
+        amrex::IntVect const stencil_guard(1);
+        AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+            Mx.nGrowVect().allGE(stencil_guard) &&
+            My.nGrowVect().allGE(stencil_guard) &&
+            Mz.nGrowVect().allGE(stencil_guard),
+            "curl(M_ext) requires one valid lower-side guard cell in every direction.");
+
         amrex::Real const dxinv = 1._rt/dx_lev[0];
         amrex::Real const dyinv = 1._rt/dx_lev[1];
         amrex::Real const dzinv = 1._rt/dx_lev[2];
@@ -1693,16 +1700,16 @@ namespace {
 
             amrex::ParallelFor(tbx, tby, tbz,
                 [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                    Jxfab(i,j,k) += (Mzfab(i,j+1,k) - Mzfab(i,j,k)) * dyinv
-                                  - (Myfab(i,j,k+1) - Myfab(i,j,k)) * dzinv;
+                    Jxfab(i,j,k) += (Mzfab(i,j,k) - Mzfab(i,j-1,k)) * dyinv
+                                  - (Myfab(i,j,k) - Myfab(i,j,k-1)) * dzinv;
                 },
                 [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                    Jyfab(i,j,k) += (Mxfab(i,j,k+1) - Mxfab(i,j,k)) * dzinv
-                                  - (Mzfab(i+1,j,k) - Mzfab(i,j,k)) * dxinv;
+                    Jyfab(i,j,k) += (Mxfab(i,j,k) - Mxfab(i,j,k-1)) * dzinv
+                                  - (Mzfab(i,j,k) - Mzfab(i-1,j,k)) * dxinv;
                 },
                 [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                    Jzfab(i,j,k) += (Myfab(i+1,j,k) - Myfab(i,j,k)) * dxinv
-                                  - (Mxfab(i,j+1,k) - Mxfab(i,j,k)) * dyinv;
+                    Jzfab(i,j,k) += (Myfab(i,j,k) - Myfab(i-1,j,k)) * dxinv
+                                  - (Mxfab(i,j,k) - Mxfab(i,j-1,k)) * dyinv;
                 }
             );
         }
@@ -1747,7 +1754,11 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
             // Scratch field for M_ext on B-staggering: not registered in the
             // field register, since it is only needed transiently to build
             // J_ext = curl(M_ext).
-            amrex::IntVect const ng = Jx->nGrowVect();
+            // One lower-side sample is required by each derivative. Parser
+            // evaluation fills this guard layer directly from physical
+            // coordinates, so values are valid at physical boundaries and
+            // agree across AMReX box boundaries without communication.
+            amrex::IntVect const ng(1);
             amrex::MultiFab Mx(Bx->boxArray(), Bx->DistributionMap(), 1, ng);
             amrex::MultiFab My(By->boxArray(), By->DistributionMap(), 1, ng);
             amrex::MultiFab Mz(Bz->boxArray(), Bz->DistributionMap(), 1, ng);
