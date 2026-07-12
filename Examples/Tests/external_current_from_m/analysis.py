@@ -6,6 +6,11 @@ import numpy as np
 import yt
 from read_raw_data import read_data
 
+
+def reduced_value(name):
+    data = np.loadtxt(f"diags/reducedfiles/{name}.txt")
+    return float(np.atleast_2d(data)[-1, 2])
+
 ds = yt.load(sys.argv[1])
 grid = ds.covering_grid(
     level=0,
@@ -88,3 +93,11 @@ for component, reference_function in native_references.items():
     assert manufactured_error < 1.0e-12
     assert symmetry_error < 1.0e-12
     assert np.max(np.abs(centroids)) < 1.0e-12
+
+
+external_l2 = reduced_value("ExternalCurrentL2")
+plasma_l2 = reduced_value("PlasmaCurrentL2")
+total_l2 = reduced_value("TotalCurrentL2")
+assert external_l2 > 0.0
+assert np.isclose(total_l2, external_l2, rtol=1.0e-14, atol=0.0)
+assert abs(plasma_l2) < 1.0e-24

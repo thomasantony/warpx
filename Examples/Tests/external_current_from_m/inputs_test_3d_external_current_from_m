@@ -34,3 +34,22 @@ diag.diag_type = Full
 diag.format = plotfile
 diag.fields_to_plot = jx jy jz
 diag.plot_raw_fields = 1
+
+# Verify that reduced diagnostics can select the exact external source, the
+# solver-used plasma current, or their total without reconstructing J_ext.
+warpx.reduced_diags_names = ExternalCurrentL2 PlasmaCurrentL2 TotalCurrentL2
+ExternalCurrentL2.type = FieldReduction
+ExternalCurrentL2.intervals = 1
+ExternalCurrentL2.current_source = external
+ExternalCurrentL2.reduction_type = Sum
+ExternalCurrentL2.reduced_function(x,y,z,Ex,Ey,Ez,Bx,By,Bz,jx,jy,jz) = "(x>-3)*(x<3)*(y>-3)*(y<3)*(z>-3)*(z<3)*(jx*jx+jy*jy+jz*jz)"
+PlasmaCurrentL2.type = FieldReduction
+PlasmaCurrentL2.intervals = 1
+PlasmaCurrentL2.current_source = plasma_used
+PlasmaCurrentL2.reduction_type = Sum
+PlasmaCurrentL2.reduced_function(x,y,z,Ex,Ey,Ez,Bx,By,Bz,jx,jy,jz) = "(x>-3)*(x<3)*(y>-3)*(y<3)*(z>-3)*(z<3)*(jx*jx+jy*jy+jz*jz)"
+TotalCurrentL2.type = FieldReduction
+TotalCurrentL2.intervals = 1
+TotalCurrentL2.current_source = total
+TotalCurrentL2.reduction_type = Sum
+TotalCurrentL2.reduced_function(x,y,z,Ex,Ey,Ez,Bx,By,Bz,jx,jy,jz) = "(x>-3)*(x<3)*(y>-3)*(y<3)*(z>-3)*(z<3)*(jx*jx+jy*jy+jz*jz)"
