@@ -75,6 +75,10 @@ private:
     // Type of reduction (e.g. Maximum, Minimum or Sum)
     ReductionType m_reduction_type;
 
+    // Current supplied to parser variables jx/jy/jz: total (current_fp),
+    // external, or solver-used plasma (= total - external).
+    int m_current_source = 0;
+
 public:
 
     /**
@@ -110,6 +114,16 @@ public:
         const amrex::MultiFab & jx = *warpx.m_fields.get(FieldType::current_fp, Direction{0},lev);
         const amrex::MultiFab & jy = *warpx.m_fields.get(FieldType::current_fp, Direction{1},lev);
         const amrex::MultiFab & jz = *warpx.m_fields.get(FieldType::current_fp, Direction{2},lev);
+        bool const has_external_current = warpx.m_fields.has_vector(FieldType::current_fp_external, lev);
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            m_current_source == 0 || has_external_current,
+            m_rd_name + ".current_source requires an external full-EM current source");
+        const amrex::MultiFab & jx_ext = has_external_current ?
+            *warpx.m_fields.get(FieldType::current_fp_external, Direction{0},lev) : jx;
+        const amrex::MultiFab & jy_ext = has_external_current ?
+            *warpx.m_fields.get(FieldType::current_fp_external, Direction{1},lev) : jy;
+        const amrex::MultiFab & jz_ext = has_external_current ?
+            *warpx.m_fields.get(FieldType::current_fp_external, Direction{2},lev) : jz;
 
 
         // General preparation of interpolation and reduction operations
@@ -133,6 +147,9 @@ public:
         auto jxtype = amrex::GpuArray<int,3>{0,0,0};
         auto jytype = amrex::GpuArray<int,3>{0,0,0};
         auto jztype = amrex::GpuArray<int,3>{0,0,0};
+        auto jx_ext_type = amrex::GpuArray<int,3>{0,0,0};
+        auto jy_ext_type = amrex::GpuArray<int,3>{0,0,0};
+        auto jz_ext_type = amrex::GpuArray<int,3>{0,0,0};
         for (int i = 0; i < AMREX_SPACEDIM; ++i){
             Extype[i] = Ex.ixType()[i];
             Eytype[i] = Ey.ixType()[i];
@@ -143,11 +160,15 @@ public:
             jxtype[i] = jx.ixType()[i];
             jytype[i] = jy.ixType()[i];
             jztype[i] = jz.ixType()[i];
+            jx_ext_type[i] = jx_ext.ixType()[i];
+            jy_ext_type[i] = jy_ext.ixType()[i];
+            jz_ext_type[i] = jz_ext.ixType()[i];
 
         }
 
         // get parser
         auto reduction_function_parser = m_parser->compile<m_nvars>();
+        int const current_source = m_current_source;
 
         // MFIter loop to interpolate fields to cell center and perform reduction
 #ifdef AMREX_USE_OMP
@@ -167,6 +188,9 @@ public:
             const auto& arrjx = jx[mfi].array();
             const auto& arrjy = jy[mfi].array();
             const auto& arrjz = jz[mfi].array();
+            const auto& arrjx_ext = jx_ext[mfi].array();
+            const auto& arrjy_ext = jy_ext[mfi].array();
+            const auto& arrjz_ext = jz_ext[mfi].array();
 
             reduce_op.eval(box, reduce_data,
             [=] AMREX_GPU_DEVICE (int i, int j, int k) -> ReduceTuple
@@ -202,12 +226,24 @@ public:
                                                                                reduction_coarsening_ratio, i, j, k, reduction_comp);
                 const amrex::Real Bz_interp = ablastr::coarsen::sample::Interp(arrBz, Bztype, cellCenteredtype,
                                                                                reduction_coarsening_ratio, i, j, k, reduction_comp);
-                const amrex::Real jx_interp = ablastr::coarsen::sample::Interp(arrjx, jxtype, cellCenteredtype,
+                const amrex::Real jx_total = ablastr::coarsen::sample::Interp(arrjx, jxtype, cellCenteredtype,
                                                                                reduction_coarsening_ratio, i, j, k, reduction_comp);
-                const amrex::Real jy_interp = ablastr::coarsen::sample::Interp(arrjy, jytype, cellCenteredtype,
+                const amrex::Real jy_total = ablastr::coarsen::sample::Interp(arrjy, jytype, cellCenteredtype,
                                                                                reduction_coarsening_ratio, i, j, k, reduction_comp);
-                const amrex::Real jz_interp = ablastr::coarsen::sample::Interp(arrjz, jztype, cellCenteredtype,
+                const amrex::Real jz_total = ablastr::coarsen::sample::Interp(arrjz, jztype, cellCenteredtype,
                                                                                reduction_coarsening_ratio, i, j, k, reduction_comp);
+                const amrex::Real jx_external = ablastr::coarsen::sample::Interp(arrjx_ext, jx_ext_type, cellCenteredtype,
+                                                                               reduction_coarsening_ratio, i, j, k, reduction_comp);
+                const amrex::Real jy_external = ablastr::coarsen::sample::Interp(arrjy_ext, jy_ext_type, cellCenteredtype,
+                                                                               reduction_coarsening_ratio, i, j, k, reduction_comp);
+                const amrex::Real jz_external = ablastr::coarsen::sample::Interp(arrjz_ext, jz_ext_type, cellCenteredtype,
+                                                                               reduction_coarsening_ratio, i, j, k, reduction_comp);
+                const amrex::Real jx_interp = current_source == 1 ? jx_external :
+                    (current_source == 2 ? jx_total - jx_external : jx_total);
+                const amrex::Real jy_interp = current_source == 1 ? jy_external :
+                    (current_source == 2 ? jy_total - jy_external : jy_total);
+                const amrex::Real jz_interp = current_source == 1 ? jz_external :
+                    (current_source == 2 ? jz_total - jz_external : jz_total);
 
                 return reduction_function_parser(x, y, z, Ex_interp, Ey_interp, Ez_interp,
                         Bx_interp, By_interp, Bz_interp,

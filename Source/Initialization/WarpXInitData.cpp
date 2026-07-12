@@ -1629,19 +1629,29 @@ void WarpX::AddExternalCurrentOnGrid ()
         }
     }
 
+    using ablastr::fields::Direction;
+    using warpx::fields::FieldType;
+    for (int lev = 0; lev <= finest_level; ++lev) {
+        for (int idim = 0; idim < 3; ++idim) {
+            m_fields.get(FieldType::current_fp_external, Direction{idim}, lev)->setVal(0.0_rt);
+            if (lev > 0) {
+                m_fields.get(FieldType::current_cp_external, Direction{idim}, lev)->setVal(0.0_rt);
+            }
+        }
+    }
+
     if (m_p_ext_field_params->has_J_external_grid) {
         for (int lev = 0; lev <= finest_level; ++lev) {
             amrex::Real const current_time = gett_new(lev) + 0.5_rt * getdt(lev);
-            AddExternalFieldOnGridUsingParser(
-                warpx::fields::FieldType::current_fp,
+            ComputeExternalFieldOnGridUsingParser(
+                warpx::fields::FieldType::current_fp_external,
                 m_p_ext_field_params->Jxfield_parser->compile<4>(),
                 m_p_ext_field_params->Jyfield_parser->compile<4>(),
                 m_p_ext_field_params->Jzfield_parser->compile<4>(),
                 lev, PatchType::fine, m_eb_update_E, true, current_time);
-
             if (lev > 0) {
-                AddExternalFieldOnGridUsingParser(
-                    warpx::fields::FieldType::current_cp,
+                ComputeExternalFieldOnGridUsingParser(
+                    warpx::fields::FieldType::current_cp_external,
                     m_p_ext_field_params->Jxfield_parser->compile<4>(),
                     m_p_ext_field_params->Jyfield_parser->compile<4>(),
                     m_p_ext_field_params->Jzfield_parser->compile<4>(),
@@ -1653,6 +1663,20 @@ void WarpX::AddExternalCurrentOnGrid ()
     // Additive, structural source term: J_ext = curl(M_ext). Independent of the
     // direct Jx/Jy/Jz_external_grid_function path above.
     AddExternalCurrentFromMOnGrid();
+
+    for (int lev = 0; lev <= finest_level; ++lev) {
+        for (int idim = 0; idim < 3; ++idim) {
+            amrex::MultiFab* total = m_fields.get(FieldType::current_fp, Direction{idim}, lev);
+            amrex::MultiFab const* external = m_fields.get(FieldType::current_fp_external, Direction{idim}, lev);
+            amrex::MultiFab::Add(*total, *external, 0, 0, total->nComp(), total->nGrowVect());
+            if (lev > 0) {
+                amrex::MultiFab* coarse_total = m_fields.get(FieldType::current_cp, Direction{idim}, lev);
+                amrex::MultiFab const* coarse_external = m_fields.get(FieldType::current_cp_external, Direction{idim}, lev);
+                amrex::MultiFab::Add(*coarse_total, *coarse_external, 0, 0,
+                                     coarse_total->nComp(), coarse_total->nGrowVect());
+            }
+        }
+    }
 }
 
 namespace {
@@ -1742,7 +1766,7 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
             warpx::fields::FieldType const b_field = (patch_type == PatchType::fine) ?
                 warpx::fields::FieldType::Bfield_fp : warpx::fields::FieldType::Bfield_cp;
             warpx::fields::FieldType const j_field = (patch_type == PatchType::fine) ?
-                warpx::fields::FieldType::current_fp : warpx::fields::FieldType::current_cp;
+                warpx::fields::FieldType::current_fp_external : warpx::fields::FieldType::current_cp_external;
 
             amrex::MultiFab* Bx = m_fields.get(b_field, Direction{0}, lev);
             amrex::MultiFab* By = m_fields.get(b_field, Direction{1}, lev);

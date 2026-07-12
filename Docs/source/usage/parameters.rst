@@ -4865,6 +4865,14 @@ This shifts analysis from post-processing to runtime calculation of reduction op
             Please be also aware that measuring maximum quantities might be very noisy in PIC
             simulations.
 
+        * ``<reduced_diags_name>.current_source`` (``string``, default ``total``)
+            Selects the current supplied to the parser variables ``jx``, ``jy`` and ``jz``.
+            ``total`` uses the current that enters the full electromagnetic field update,
+            ``external`` uses the isolated parser- or magnetization-defined source current,
+            and ``plasma_used`` uses ``total - external`` after the plasma current has been
+            synchronized and filtered. The latter two choices require an external full-EM
+            current source.
+
         The only output column is the reduced value.
 
         Note that the fields are averaged on the cell centers before the reduction is performed.

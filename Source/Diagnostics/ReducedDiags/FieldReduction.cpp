@@ -17,6 +17,7 @@
 #include <AMReX_Vector.H>
 
 #include <algorithm>
+#include <cctype>
 #include <ostream>
 
 #include <regex>
@@ -47,6 +48,15 @@ FieldReduction::FieldReduction (const std::string& rd_name)
     BackwardCompatibility();
 
     const amrex::ParmParse pp_rd_name(rd_name);
+
+    std::string current_source = "total";
+    pp_rd_name.query("current_source", current_source);
+    std::transform(current_source.begin(), current_source.end(), current_source.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+        current_source == "total" || current_source == "external" || current_source == "plasma_used",
+        rd_name + ".current_source must be total, external, or plasma_used");
+    m_current_source = current_source == "external" ? 1 : current_source == "plasma_used" ? 2 : 0;
 
     // read reduced function with parser
     std::string parser_string;
