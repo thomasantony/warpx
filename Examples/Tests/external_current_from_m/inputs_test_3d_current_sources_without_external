@@ -1,0 +1,57 @@
+warpx.abort_on_warning_threshold = medium
+warpx.serialize_initial_conditions = 1
+warpx.verbose = 0
+
+max_step = 1
+geometry.dims = 3
+geometry.prob_lo = -1.0 -1.0 -1.0
+geometry.prob_hi =  1.0  1.0  1.0
+geometry.is_periodic = 1 1 1
+amr.n_cell = 8 8 8
+amr.max_grid_size = 4
+amr.blocking_factor = 4
+amr.max_level = 0
+
+boundary.field_lo = periodic periodic periodic
+boundary.field_hi = periodic periodic periodic
+boundary.particle_lo = periodic periodic periodic
+boundary.particle_hi = periodic periodic periodic
+
+warpx.const_dt = 1.0e-12
+warpx.use_filter = 0
+algo.maxwell_solver = Yee
+algo.current_deposition = villasenor
+algo.particle_shape = 2
+
+particles.species_names = electrons
+electrons.charge = -q_e
+electrons.mass = m_e
+electrons.injection_style = NUniformPerCell
+electrons.num_particles_per_cell_each_dim = 1 1 1
+electrons.profile = constant
+electrons.density = 1.0e6
+electrons.momentum_distribution_type = gaussian
+electrons.ux_m = 1.0e-3
+electrons.ux_th = 0.0
+electrons.uy_th = 0.0
+electrons.uz_th = 0.0
+
+warpx.reduced_diags_names = ExternalCurrentL2 PlasmaCurrentL2 TotalCurrentL2
+
+ExternalCurrentL2.type = FieldReduction
+ExternalCurrentL2.intervals = 1
+ExternalCurrentL2.current_source = external
+ExternalCurrentL2.reduction_type = Sum
+ExternalCurrentL2.reduced_function(x,y,z,Ex,Ey,Ez,Bx,By,Bz,jx,jy,jz) = "jx*jx+jy*jy+jz*jz"
+
+PlasmaCurrentL2.type = FieldReduction
+PlasmaCurrentL2.intervals = 1
+PlasmaCurrentL2.current_source = plasma_used
+PlasmaCurrentL2.reduction_type = Sum
+PlasmaCurrentL2.reduced_function(x,y,z,Ex,Ey,Ez,Bx,By,Bz,jx,jy,jz) = "jx*jx+jy*jy+jz*jz"
+
+TotalCurrentL2.type = FieldReduction
+TotalCurrentL2.intervals = 1
+TotalCurrentL2.current_source = total
+TotalCurrentL2.reduction_type = Sum
+TotalCurrentL2.reduced_function(x,y,z,Ex,Ey,Ez,Bx,By,Bz,jx,jy,jz) = "jx*jx+jy*jy+jz*jz"
