@@ -115,9 +115,6 @@ public:
         const amrex::MultiFab & jy = *warpx.m_fields.get(FieldType::current_fp, Direction{1},lev);
         const amrex::MultiFab & jz = *warpx.m_fields.get(FieldType::current_fp, Direction{2},lev);
         bool const has_external_current = warpx.m_fields.has_vector(FieldType::current_fp_external, lev);
-        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
-            m_current_source == 0 || has_external_current,
-            m_rd_name + ".current_source requires an external full-EM current source");
         const amrex::MultiFab & jx_ext = has_external_current ?
             *warpx.m_fields.get(FieldType::current_fp_external, Direction{0},lev) : jx;
         const amrex::MultiFab & jy_ext = has_external_current ?
@@ -169,6 +166,7 @@ public:
         // get parser
         auto reduction_function_parser = m_parser->compile<m_nvars>();
         int const current_source = m_current_source;
+        int const has_external = has_external_current ? 1 : 0;
 
         // MFIter loop to interpolate fields to cell center and perform reduction
 #ifdef AMREX_USE_OMP
@@ -232,12 +230,15 @@ public:
                                                                                reduction_coarsening_ratio, i, j, k, reduction_comp);
                 const amrex::Real jz_total = ablastr::coarsen::sample::Interp(arrjz, jztype, cellCenteredtype,
                                                                                reduction_coarsening_ratio, i, j, k, reduction_comp);
-                const amrex::Real jx_external = ablastr::coarsen::sample::Interp(arrjx_ext, jx_ext_type, cellCenteredtype,
-                                                                               reduction_coarsening_ratio, i, j, k, reduction_comp);
-                const amrex::Real jy_external = ablastr::coarsen::sample::Interp(arrjy_ext, jy_ext_type, cellCenteredtype,
-                                                                               reduction_coarsening_ratio, i, j, k, reduction_comp);
-                const amrex::Real jz_external = ablastr::coarsen::sample::Interp(arrjz_ext, jz_ext_type, cellCenteredtype,
-                                                                               reduction_coarsening_ratio, i, j, k, reduction_comp);
+                const amrex::Real jx_external = has_external ?
+                    ablastr::coarsen::sample::Interp(arrjx_ext, jx_ext_type, cellCenteredtype,
+                                                     reduction_coarsening_ratio, i, j, k, reduction_comp) : 0._rt;
+                const amrex::Real jy_external = has_external ?
+                    ablastr::coarsen::sample::Interp(arrjy_ext, jy_ext_type, cellCenteredtype,
+                                                     reduction_coarsening_ratio, i, j, k, reduction_comp) : 0._rt;
+                const amrex::Real jz_external = has_external ?
+                    ablastr::coarsen::sample::Interp(arrjz_ext, jz_ext_type, cellCenteredtype,
+                                                     reduction_coarsening_ratio, i, j, k, reduction_comp) : 0._rt;
                 const amrex::Real jx_interp = current_source == 1 ? jx_external :
                     (current_source == 2 ? jx_total - jx_external : jx_total);
                 const amrex::Real jy_interp = current_source == 1 ? jy_external :

@@ -4870,8 +4870,8 @@ This shifts analysis from post-processing to runtime calculation of reduction op
             ``total`` uses the current that enters the full electromagnetic field update,
             ``external`` uses the isolated parser- or magnetization-defined source current,
             and ``plasma_used`` uses ``total - external`` after the plasma current has been
-            synchronized and filtered. The latter two choices require an external full-EM
-            current source.
+            synchronized and filtered. With no external full-EM current source, ``external``
+            is identically zero and ``plasma_used`` equals ``total``.
 
         The only output column is the reduced value.
 
