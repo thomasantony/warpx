@@ -1,22 +1,68 @@
+diff --git a/Src/Base/AMReX_GpuDevice.H b/Src/Base/AMReX_GpuDevice.H
+index 81ca11eaf..350c2513f 100644
+--- a/Src/Base/AMReX_GpuDevice.H
++++ b/Src/Base/AMReX_GpuDevice.H
+@@ -127,6 +127,11 @@ public:
+ #endif
+ 
+     static int deviceId () noexcept;
++    /**
++     * True if CUDA can map a pinned host allocation into the active GPU's
++     * address space.
++     */
++    static bool canAccessPinnedHostMemory () noexcept;
+     static int numDevicesUsed () noexcept; // Total number of device used
+     static int numDevicePartners () noexcept; // Number of partners sharing my device
+ 
+diff --git a/Src/Base/AMReX_GpuDevice.cpp b/Src/Base/AMReX_GpuDevice.cpp
+index d6f3e3fe1..95e59c3ba 100644
+--- a/Src/Base/AMReX_GpuDevice.cpp
++++ b/Src/Base/AMReX_GpuDevice.cpp
+@@ -694,6 +694,34 @@ Device::deviceId () noexcept
+     return device_id;
+ }
+ 
++bool
++Device::canAccessPinnedHostMemory () noexcept
++{
++#if defined(AMREX_USE_CUDA)
++    static bool can_access = false;
++    static std::once_flag flag;
++    std::call_once(flag, [] () {
++        int can_map = 0;
++        if (cudaDeviceGetAttribute(&can_map, cudaDevAttrCanMapHostMemory,
++                                   Device::deviceId()) != cudaSuccess || !can_map) {
++            return;
++        }
++
++        void* host_ptr = nullptr;
++        if (cudaHostAlloc(&host_ptr, sizeof(void*), cudaHostAllocMapped) != cudaSuccess) {
++            return;
++        }
++
++        void* device_ptr = nullptr;
++        can_access = cudaHostGetDevicePointer(&device_ptr, host_ptr, 0) == cudaSuccess;
++        cudaFreeHost(host_ptr);
++    });
++    return can_access;
++#else
++    return true;
++#endif
++}
++
+ int
+ Device::numDevicesUsed () noexcept
+ {
 diff --git a/Src/Base/AMReX_GpuUtility.H b/Src/Base/AMReX_GpuUtility.H
-index 9998e5cff..a2545800d 100644
+index 9998e5cff..71cdbf1fb 100644
 --- a/Src/Base/AMReX_GpuUtility.H
 +++ b/Src/Base/AMReX_GpuUtility.H
-@@ -7,6 +7,7 @@
- #include <AMReX_GpuControl.H>
- #include <AMReX_GpuDevice.H>
- #include <AMReX_Extension.H>
-+#include <AMReX_ParmParse.H>
- #include <AMReX_REAL.H>
- #include <AMReX_INT.H>
- #include <AMReX_Array.H>
-@@ -248,8 +249,16 @@ using Gpu::isinf;
+@@ -248,8 +248,15 @@ using Gpu::isinf;
  #define AMREX_GET_DEVICE_FUNC_PTR(FP_t, sym) \
      [] () { \
          auto* amrex_i_hp = (FP_t*) amrex::The_Pinned_Arena()->alloc(sizeof(FP_t)); \
 -        amrex::single_task([=] AMREX_GPU_DEVICE () { *amrex_i_hp = sym; }); \
-+        bool amrex_i_use_device_result = false; \
-+        amrex::ParmParse("amrex").queryAdd("reduce_use_device_result", amrex_i_use_device_result); \
++        bool amrex_i_use_device_result = !amrex::Gpu::Device::canAccessPinnedHostMemory(); \
 +        auto* amrex_i_dp = amrex_i_use_device_result \
 +            ? (FP_t*) amrex::The_Arena()->alloc(sizeof(FP_t)) : amrex_i_hp; \
 +        amrex::single_task([=] AMREX_GPU_DEVICE () { *amrex_i_dp = sym; }); \
@@ -29,43 +75,20 @@ index 9998e5cff..a2545800d 100644
          amrex::The_Pinned_Arena()->free(amrex_i_hp); \
          return amrex_i_r; \
 diff --git a/Src/Base/AMReX_Reduce.H b/Src/Base/AMReX_Reduce.H
-index 3a808f429..b9530c99c 100644
+index 3a808f429..f0c41f8f7 100644
 --- a/Src/Base/AMReX_Reduce.H
 +++ b/Src/Base/AMReX_Reduce.H
-@@ -7,6 +7,7 @@
- #include <AMReX_Arena.H>
- #include <AMReX_OpenMP.H>
- #include <AMReX_MFIter.H>
-+#include <AMReX_ParmParse.H>
- #include <AMReX_TypeList.H>
- #include <AMReX_ValLocPair.H>
- 
-@@ -454,6 +455,8 @@ public:
-                       "ReduceData::Type must be trivially destructible");
- 
-         new (m_host_tuple) Type();
-+        ParmParse pp("amrex");
-+        pp.queryAdd("reduce_use_device_result", m_use_device_result);
-         m_nblocks.fill(0);
-     }
- 
-@@ -491,6 +494,7 @@ public:
+@@ -491,6 +491,9 @@ public:
      }
  
      Type* hostPtr () { return m_host_tuple; }
-+    bool useDeviceResult () const noexcept { return m_use_device_result; }
++    bool useDeviceResult () const noexcept {
++        return !Gpu::Device::canAccessPinnedHostMemory();
++    }
  
      GpuArray<int,AMREX_GPU_MAX_STREAMS>& nBlocks () { return m_nblocks; }
      int& nBlocks (gpuStream_t const& s) { return m_nblocks[streamIndexChecked(s)]; }
-@@ -531,6 +535,7 @@ private:
-     bool m_stream_index_zero_set = false;
-     bool m_used_external_stream = false;
-     bool m_value_called = false;
-+    bool m_use_device_result = false;
-     std::function<Type()> m_fn_value;
- };
- 
-@@ -902,6 +907,12 @@ public:
+@@ -902,6 +905,12 @@ public:
              Gpu::dtoh_memcpy_async(hp, dtmp.data(), sizeof(ReduceTuple));
  #endif
  #else
@@ -78,7 +101,7 @@ index 3a808f429..b9530c99c 100644
              amrex::launch<AMREX_GPU_MAX_THREADS>(1, 0, stream,
              [=] AMREX_GPU_DEVICE () noexcept
              {
-@@ -916,8 +927,11 @@ public:
+@@ -916,8 +925,11 @@ public:
                      }
                  }
                  Reduce::detail::for_each_parallel<0, ReduceTuple, Ps...>(dst, r);
@@ -92,25 +115,15 @@ index 3a808f429..b9530c99c 100644
              Gpu::streamSynchronize();
          }
 diff --git a/Src/Base/AMReX_Scan.H b/Src/Base/AMReX_Scan.H
-index 8f2d08e18..c368a87be 100644
+index 8f2d08e18..f5a9564b4 100644
 --- a/Src/Base/AMReX_Scan.H
 +++ b/Src/Base/AMReX_Scan.H
-@@ -5,6 +5,7 @@
- #include <AMReX_Extension.H>
- #include <AMReX_Gpu.H>
- #include <AMReX_Arena.H>
-+#include <AMReX_ParmParse.H>
- 
- #if defined(AMREX_USE_CUDA)
- #  include <cub/cub.cuh>
-@@ -695,7 +696,14 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
-         scan_tile_state.initialize_prefix(gid, nblocks);
-     });
+@@ -838,7 +838,12 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
+         });
+     }
  
 -    T* totalsum_p = (a_ret_sum) ? (T*)(The_Pinned_Arena()->alloc(sizeof(T))) : nullptr;
-+    bool use_device_result = false;
-+    ParmParse pp("amrex");
-+    pp.queryAdd("reduce_use_device_result", use_device_result);
++    bool const use_device_result = !Gpu::Device::canAccessPinnedHostMemory();
 +    T* totalsum_h = (a_ret_sum) ? (T*)(The_Pinned_Arena()->alloc(sizeof(T))) : nullptr;
 +    T* totalsum_p = totalsum_h;
 +    if (use_device_result && a_ret_sum) {
@@ -119,7 +132,7 @@ index 8f2d08e18..c368a87be 100644
  
      amrex::launch_global<nthreads> <<<nblocks, nthreads, sm, stream>>> (
      [=] AMREX_GPU_DEVICE () noexcept
-@@ -940,13 +948,18 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
+@@ -940,13 +945,18 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
          Gpu::streamSynchronize();
          AMREX_GPU_ERROR_CHECK();
  
@@ -141,102 +154,39 @@ index 8f2d08e18..c368a87be 100644
      return ret;
  }
 diff --git a/Src/Particle/AMReX_ParticleLocator.H b/Src/Particle/AMReX_ParticleLocator.H
-index e8e9ebc17..123eb12f2 100644
+index e8e9ebc17..9426959ef 100644
 --- a/Src/Particle/AMReX_ParticleLocator.H
 +++ b/Src/Particle/AMReX_ParticleLocator.H
-@@ -142,6 +142,7 @@ public:
- 
-         m_device_boxes.resize(num_boxes);
-         Gpu::copyAsync(Gpu::hostToDevice, m_host_boxes.begin(), m_host_boxes.end(), m_device_boxes.begin());
-+        auto *const boxes_ptr = m_device_boxes.dataPtr();
- 
-         if (num_boxes == 0) {
-             m_bins_lo  = IntVect(AMREX_D_DECL( 0,  0,  0));
-@@ -151,39 +152,54 @@ public:
+@@ -151,6 +151,31 @@ public:
              return;
          }
  
--        // compute the lo, hi and the max box size in each direction
--        ReduceOps<AMREX_D_DECL(ReduceOpMin, ReduceOpMin, ReduceOpMin),
--                  AMREX_D_DECL(ReduceOpMax, ReduceOpMax, ReduceOpMax),
--                  AMREX_D_DECL(ReduceOpMax, ReduceOpMax, ReduceOpMax)> reduce_op;
--        ReduceData<AMREX_D_DECL(int, int, int),
--                   AMREX_D_DECL(int, int, int),
--                   AMREX_D_DECL(int, int, int)> reduce_data(reduce_op);
--        using ReduceTuple = typename decltype(reduce_data)::Type;
--
--        auto *const boxes_ptr = m_device_boxes.dataPtr();
--        reduce_op.eval(num_boxes, reduce_data,
--        [=] AMREX_GPU_DEVICE (int i) -> ReduceTuple
--        {
--            const Box& box = boxes_ptr[i];
--            IntVect lo = box.smallEnd();
--            IntVect hi = box.bigEnd();
--            IntVect si = box.length();
--            return {AMREX_D_DECL(lo[0], lo[1], lo[2]),
--                    AMREX_D_DECL(hi[0], hi[1], hi[2]),
--                    AMREX_D_DECL(si[0], si[1], si[2])};
--        });
--
--        ReduceTuple hv = reduce_data.value(reduce_op);
--
--        m_bins_lo  = IntVect(AMREX_D_DECL(amrex::get<0>(hv),
--                                          amrex::get<1>(hv),
--                                          amrex::get<2>(hv)));
--        m_bins_hi  = IntVect(AMREX_D_DECL(amrex::get< AMREX_SPACEDIM  >(hv),
--                                          amrex::get< AMREX_SPACEDIM+1>(hv),
--                                          amrex::get< AMREX_SPACEDIM+2>(hv)));
--        m_bin_size = IntVect(AMREX_D_DECL(amrex::get<2*AMREX_SPACEDIM>(hv),
--                                          amrex::get<2*AMREX_SPACEDIM+1>(hv),
--                                          amrex::get<2*AMREX_SPACEDIM+2>(hv)));
-+        bool use_host_reduction = false;
-+        ParmParse pp("amrex");
-+        pp.queryAdd("reduce_use_device_result", use_host_reduction);
-+
-+        if (use_host_reduction) {
++        if (!Gpu::Device::canAccessPinnedHostMemory()) {
 +            m_bins_lo = m_host_boxes[0].smallEnd();
 +            m_bins_hi = m_host_boxes[0].bigEnd();
 +            m_bin_size = m_host_boxes[0].length();
 +            for (int i = 1; i < num_boxes; ++i) {
-+                const Box& box = m_host_boxes[i];
++                Box const& box = m_host_boxes[i];
 +                m_bins_lo.min(box.smallEnd());
 +                m_bins_hi.max(box.bigEnd());
 +                m_bin_size.max(box.length());
 +            }
-+        } else {
-+            // Compute the lo, hi and the max box size in each direction.
-+            ReduceOps<AMREX_D_DECL(ReduceOpMin, ReduceOpMin, ReduceOpMin),
-+                      AMREX_D_DECL(ReduceOpMax, ReduceOpMax, ReduceOpMax),
-+                      AMREX_D_DECL(ReduceOpMax, ReduceOpMax, ReduceOpMax)> reduce_op;
-+            ReduceData<AMREX_D_DECL(int, int, int),
-+                       AMREX_D_DECL(int, int, int),
-+                       AMREX_D_DECL(int, int, int)> reduce_data(reduce_op);
-+            using ReduceTuple = typename decltype(reduce_data)::Type;
 +
-+            reduce_op.eval(num_boxes, reduce_data,
-+            [=] AMREX_GPU_DEVICE (int i) -> ReduceTuple
-+            {
-+                const Box& box = boxes_ptr[i];
-+                IntVect lo = box.smallEnd();
-+                IntVect hi = box.bigEnd();
-+                IntVect si = box.length();
-+                return {AMREX_D_DECL(lo[0], lo[1], lo[2]),
-+                        AMREX_D_DECL(hi[0], hi[1], hi[2]),
-+                        AMREX_D_DECL(si[0], si[1], si[2])};
-+            });
-+
-+            ReduceTuple hv = reduce_data.value(reduce_op);
-+
-+            m_bins_lo  = IntVect(AMREX_D_DECL(amrex::get<0>(hv),
-+                                              amrex::get<1>(hv),
-+                                              amrex::get<2>(hv)));
-+            m_bins_hi  = IntVect(AMREX_D_DECL(amrex::get< AMREX_SPACEDIM  >(hv),
-+                                              amrex::get< AMREX_SPACEDIM+1>(hv),
-+                                              amrex::get< AMREX_SPACEDIM+2>(hv)));
-+            m_bin_size = IntVect(AMREX_D_DECL(amrex::get<2*AMREX_SPACEDIM>(hv),
-+                                              amrex::get<2*AMREX_SPACEDIM+1>(hv),
-+                                              amrex::get<2*AMREX_SPACEDIM+2>(hv)));
++            m_num_bins = (m_bins_hi - m_bins_lo + m_bin_size) / m_bin_size;
++            Box bins_box(IntVect::TheZeroVector(),
++                         m_num_bins-IntVect::TheUnitVector());
++            IntVect bin_size = m_bin_size;
++            IntVect bins_lo = m_bins_lo;
++            auto *const boxes_ptr = m_device_boxes.dataPtr();
++            m_bins.build(num_boxes, boxes_ptr, bins_box,
++                         [=] AMREX_GPU_DEVICE (Box const& box) noexcept -> IntVect
++                         {
++                             return (box.smallEnd() - bins_lo) / bin_size;
++                         });
++            return;
 +        }
- 
-         m_num_bins = (m_bins_hi - m_bins_lo + m_bin_size) / m_bin_size;
- 
++
+         // compute the lo, hi and the max box size in each direction
+         ReduceOps<AMREX_D_DECL(ReduceOpMin, ReduceOpMin, ReduceOpMin),
+                   AMREX_D_DECL(ReduceOpMax, ReduceOpMax, ReduceOpMax),
+

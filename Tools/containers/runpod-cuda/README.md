@@ -71,12 +71,10 @@ RunPod caveats:
 ## GPU reduction compatibility
 
 The image includes an AMReX reduction fallback for GPU container runtimes that
-do not support device access to mapped pinned host memory. It is disabled by
-default. Enable it in an input file when needed:
-
-```text
-amrex.reduce_use_device_result = 1
-```
+do not support device access to mapped pinned host memory. At startup, AMReX
+probes the selected CUDA device with `cudaHostAllocMapped` and
+`cudaHostGetDevicePointer`. The fallback is enabled automatically when that
+probe fails.
 
 This makes GPU reduction and scan result scalars write to device memory first,
 then copy to the host, instead of writing directly to mapped host memory. It
