@@ -79,7 +79,9 @@ amrex.reduce_use_device_result = 1
 ```
 
 This makes the final local reduction write one value in device memory and copy
-that value to the host, instead of directly writing to mapped host memory.
+that value to the host, instead of directly writing to mapped host memory. It
+also computes `ParticleLocator` box bounds on the host, avoiding its initial
+GPU reduction on affected runtimes.
 
 ## Optional S3/R2 Uploads
 

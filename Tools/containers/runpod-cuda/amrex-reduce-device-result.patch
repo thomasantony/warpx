@@ -61,3 +61,105 @@ index 3a808f429..b9530c99c 100644
  #endif
              Gpu::streamSynchronize();
          }
+diff --git a/Src/Particle/AMReX_ParticleLocator.H b/Src/Particle/AMReX_ParticleLocator.H
+index e8e9ebc17..bc46a027a 100644
+--- a/Src/Particle/AMReX_ParticleLocator.H
++++ b/Src/Particle/AMReX_ParticleLocator.H
+@@ -142,6 +142,7 @@ public:
+-
++
+         m_device_boxes.resize(num_boxes);
+         Gpu::copyAsync(Gpu::hostToDevice, m_host_boxes.begin(), m_host_boxes.end(), m_device_boxes.begin());
++        auto *const boxes_ptr = m_device_boxes.dataPtr();
+-
++
+         if (num_boxes == 0) {
+             m_bins_lo  = IntVect(AMREX_D_DECL( 0,  0,  0));
+@@ -151,39 +151,55 @@ public:
+             return;
+         }
+-
++
+-        // compute the lo, hi and the max box size in each direction
+-        ReduceOps<AMREX_D_DECL(ReduceOpMin, ReduceOpMin, ReduceOpMin),
+-                  AMREX_D_DECL(ReduceOpMax, ReduceOpMax, ReduceOpMax),
+-                  AMREX_D_DECL(ReduceOpMax, ReduceOpMax, ReduceOpMax)> reduce_op;
+-        ReduceData<AMREX_D_DECL(int, int, int),
+-                   AMREX_D_DECL(int, int, int),
+-                   AMREX_D_DECL(int, int, int)> reduce_data(reduce_op);
+-        using ReduceTuple = typename decltype(reduce_data)::Type;
+-
+-        reduce_op.eval(num_boxes, reduce_data,
+-        [=] AMREX_GPU_DEVICE (int i) -> ReduceTuple
+-        {
+-            const Box& box = boxes_ptr[i];
+-            IntVect lo = box.smallEnd();
+-            IntVect hi = box.bigEnd();
+-            IntVect si = box.length();
+-            return {AMREX_D_DECL(lo[0], lo[1], lo[2]),
+-                    AMREX_D_DECL(hi[0], hi[1], hi[2]),
+-                    AMREX_D_DECL(si[0], si[1], si[2])};
+-        });
+-
+-        ReduceTuple hv = reduce_data.value(reduce_op);
+-
+-        m_bins_lo  = IntVect(AMREX_D_DECL(amrex::get<0>(hv),
+-                                          amrex::get<1>(hv),
+-                                          amrex::get<2>(hv)));
+-        m_bins_hi  = IntVect(AMREX_D_DECL(amrex::get< AMREX_SPACEDIM  >(hv),
+-                                          amrex::get< AMREX_SPACEDIM+1>(hv),
+-                                          amrex::get< AMREX_SPACEDIM+2>(hv)));
+-        m_bin_size = IntVect(AMREX_D_DECL(amrex::get<2*AMREX_SPACEDIM>(hv),
+-                                          amrex::get<2*AMREX_SPACEDIM+1>(hv),
+-                                          amrex::get<2*AMREX_SPACEDIM+2>(hv)));
++        bool use_host_reduction = false;
++        ParmParse pp("amrex");
++        pp.queryAdd("reduce_use_device_result", use_host_reduction);
++
++        if (use_host_reduction) {
++            m_bins_lo = m_host_boxes[0].smallEnd();
++            m_bins_hi = m_host_boxes[0].bigEnd();
++            m_bin_size = m_host_boxes[0].length();
++            for (int i = 1; i < num_boxes; ++i) {
++                const Box& box = m_host_boxes[i];
++                m_bins_lo.min(box.smallEnd());
++                m_bins_hi.max(box.bigEnd());
++                m_bin_size.max(box.length());
++            }
++        } else {
++            // Compute the lo, hi and the max box size in each direction.
++            ReduceOps<AMREX_D_DECL(ReduceOpMin, ReduceOpMin, ReduceOpMin),
++                      AMREX_D_DECL(ReduceOpMax, ReduceOpMax, ReduceOpMax),
++                      AMREX_D_DECL(ReduceOpMax, ReduceOpMax, ReduceOpMax)> reduce_op;
++            ReduceData<AMREX_D_DECL(int, int, int),
++                       AMREX_D_DECL(int, int, int),
++                       AMREX_D_DECL(int, int, int)> reduce_data(reduce_op);
++            using ReduceTuple = typename decltype(reduce_data)::Type;
++
++            reduce_op.eval(num_boxes, reduce_data,
++            [=] AMREX_GPU_DEVICE (int i) -> ReduceTuple
++            {
++                const Box& box = boxes_ptr[i];
++                IntVect lo = box.smallEnd();
++                IntVect hi = box.bigEnd();
++                IntVect si = box.length();
++                return {AMREX_D_DECL(lo[0], lo[1], lo[2]),
++                        AMREX_D_DECL(hi[0], hi[1], hi[2]),
++                        AMREX_D_DECL(si[0], si[1], si[2])};
++            });
++
++            ReduceTuple hv = reduce_data.value(reduce_op);
++
++            m_bins_lo  = IntVect(AMREX_D_DECL(amrex::get<0>(hv),
++                                              amrex::get<1>(hv),
++                                              amrex::get<2>(hv)));
++            m_bins_hi  = IntVect(AMREX_D_DECL(amrex::get< AMREX_SPACEDIM  >(hv),
++                                              amrex::get< AMREX_SPACEDIM+1>(hv),
++                                              amrex::get< AMREX_SPACEDIM+2>(hv)));
++            m_bin_size = IntVect(AMREX_D_DECL(amrex::get<2*AMREX_SPACEDIM>(hv),
++                                              amrex::get<2*AMREX_SPACEDIM+1>(hv),
++                                              amrex::get<2*AMREX_SPACEDIM+2>(hv)));
++        }
+-
++
+         m_num_bins = (m_bins_hi - m_bins_lo + m_bin_size) / m_bin_size;
