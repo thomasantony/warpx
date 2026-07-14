@@ -78,10 +78,10 @@ default. Enable it in an input file when needed:
 amrex.reduce_use_device_result = 1
 ```
 
-This makes the final local reduction write one value in device memory and copy
-that value to the host, instead of directly writing to mapped host memory. It
-also computes `ParticleLocator` box bounds on the host, avoiding its initial
-GPU reduction on affected runtimes.
+This makes GPU reduction and scan result scalars write to device memory first,
+then copy to the host, instead of writing directly to mapped host memory. It
+also computes `ParticleLocator` box bounds on the host and avoids direct
+mapped-host writes when obtaining device function pointers.
 
 ## Optional S3/R2 Uploads
 
