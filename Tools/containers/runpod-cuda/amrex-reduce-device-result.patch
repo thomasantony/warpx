@@ -1,0 +1,63 @@
+diff --git a/Src/Base/AMReX_Reduce.H b/Src/Base/AMReX_Reduce.H
+index 3a808f429..b9530c99c 100644
+--- a/Src/Base/AMReX_Reduce.H
++++ b/Src/Base/AMReX_Reduce.H
+@@ -7,6 +7,7 @@
+ #include <AMReX_Arena.H>
+ #include <AMReX_OpenMP.H>
+ #include <AMReX_MFIter.H>
++#include <AMReX_ParmParse.H>
+ #include <AMReX_TypeList.H>
+ #include <AMReX_ValLocPair.H>
+ 
+@@ -454,6 +455,8 @@ public:
+                       "ReduceData::Type must be trivially destructible");
+ 
+         new (m_host_tuple) Type();
++        ParmParse pp("amrex");
++        pp.queryAdd("reduce_use_device_result", m_use_device_result);
+         m_nblocks.fill(0);
+     }
+ 
+@@ -491,6 +494,7 @@ public:
+     }
+ 
+     Type* hostPtr () { return m_host_tuple; }
++    bool useDeviceResult () const noexcept { return m_use_device_result; }
+ 
+     GpuArray<int,AMREX_GPU_MAX_STREAMS>& nBlocks () { return m_nblocks; }
+     int& nBlocks (gpuStream_t const& s) { return m_nblocks[streamIndexChecked(s)]; }
+@@ -531,6 +535,7 @@ private:
+     bool m_stream_index_zero_set = false;
+     bool m_used_external_stream = false;
+     bool m_value_called = false;
++    bool m_use_device_result = false;
+     std::function<Type()> m_fn_value;
+ };
+ 
+@@ -902,6 +907,12 @@ public:
+             Gpu::dtoh_memcpy_async(hp, dtmp.data(), sizeof(ReduceTuple));
+ #endif
+ #else
++            Gpu::DeviceVector<ReduceTuple> dtmp;
++            auto presult = hp;
++            if (reduce_data.useDeviceResult()) {
++                dtmp.resize(1);
++                presult = dtmp.data();
++            }
+             amrex::launch<AMREX_GPU_MAX_THREADS>(1, 0, stream,
+             [=] AMREX_GPU_DEVICE () noexcept
+             {
+@@ -916,8 +927,11 @@ public:
+                     }
+                 }
+                 Reduce::detail::for_each_parallel<0, ReduceTuple, Ps...>(dst, r);
+-                if (threadIdx.x == 0) { *hp = dst; }
++                if (threadIdx.x == 0) { *presult = dst; }
+             });
++            if (reduce_data.useDeviceResult()) {
++                Gpu::dtoh_memcpy_async(hp, presult, sizeof(ReduceTuple));
++            }
+ #endif
+             Gpu::streamSynchronize();
+         }

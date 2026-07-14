@@ -87,6 +87,8 @@ RUN cmake \
         -DWarpX_QED_TABLE_GEN=OFF \
         -DopenPMD_USE_ADIOS2=OFF \
         -DopenPMD_USE_HDF5=ON && \
+    git -C /tmp/warpx-build/_deps/fetchedamrex-src apply \
+        /src/warpx/Tools/containers/runpod-cuda/amrex-reduce-device-result.patch && \
     cmake --build /tmp/warpx-build --target install -j "${NJOBS:-$(nproc)}" && \
     for geom in 1d 2d 3d rz rcylinder rsphere; do \
         target="$(find /opt/warpx/bin -maxdepth 1 -type f -name "warpx.${geom}.*" -print -quit)"; \
