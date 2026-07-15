@@ -10,6 +10,7 @@
 #include "Particles/ParticleBoundaryBuffer.H"
 #include "Particles/MultiParticleContainer.H"
 #include "Utils/TextMsg.H"
+#include "Utils/WarpXUtil.H"
 #include "Particles/Pusher/GetAndSetPosition.H"
 #include "Particles/Pusher/UpdatePosition.H"
 
@@ -411,7 +412,7 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                 if (!buffer[i].isDefined())
                 {
                     buffer[i] = pc.make_alike<>();
-                    buffer[i].SetArena(amrex::The_Pinned_Arena());
+                    buffer[i].SetArena(GetHostDeviceArena());
                     buffer[i].AddIntComp("stepScraped", true);
                     buffer[i].AddRealComp("deltaTimeScraped", true);
                     buffer[i].AddRealComp("timeScraped", true);
@@ -521,7 +522,7 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
             if (!buffer[i].isDefined())
             {
                 buffer[i] = pc.make_alike<>();
-                buffer[i].SetArena(amrex::The_Pinned_Arena());
+                buffer[i].SetArena(GetHostDeviceArena());
                 buffer[i].AddIntComp("stepScraped", true);
                 buffer[i].AddRealComp("deltaTimeScraped", true);
                 buffer[i].AddRealComp("timeScraped", true);

@@ -19,6 +19,7 @@
 #include "Utils/Parser/ParserUtils.H"
 #include "Utils/TextMsg.H"
 #include "Utils/WarpXConst.H"
+#include "Utils/WarpXUtil.H"
 #include "WarpX.H"
 
 #include <ablastr/fields/MultiFabRegister.H>
@@ -1470,7 +1471,7 @@ BTDiagnostics::InitializeParticleBuffer (const MultiParticleContainer& mpc)
             m_totalParticles_in_buffer[i][isp] = 0;
             const int idx = mpc.getSpeciesID(m_output_species_names[isp]);
             m_particles_buffer[i][isp] = std::make_unique<WarpXParticleContainer::Base>(mpc.GetParticleContainer(idx).make_alike<>());
-            m_particles_buffer[i][isp]->SetArena(amrex::The_Pinned_Arena());
+            m_particles_buffer[i][isp]->SetArena(GetHostDeviceArena());
 
             // SoA component names
             {

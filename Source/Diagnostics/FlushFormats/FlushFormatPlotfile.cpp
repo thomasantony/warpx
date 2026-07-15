@@ -9,6 +9,7 @@
 #include "Utils/Interpolate.H"
 #include "Utils/Parser/ParserUtils.H"
 #include "Utils/TextMsg.H"
+#include "Utils/WarpXUtil.H"
 #include "WarpX.H"
 
 #include <ablastr/fields/MultiFabRegister.H>
@@ -362,7 +363,7 @@ FlushFormatPlotfile::WriteParticles(const std::string& dir,
         auto tmp = isBTD ?
             pinned_pc->make_alike<>() :
             pc->make_alike<>();
-        tmp.SetArena(amrex::The_Pinned_Arena());
+        tmp.SetArena(GetHostDeviceArena());
 
         Vector<std::string> real_names;
         Vector<std::string> int_names;

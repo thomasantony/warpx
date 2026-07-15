@@ -33,6 +33,14 @@ void ReadBoostedFrameParameters(amrex::Real& gamma_boost, amrex::Real& beta_boos
 
 void ConvertLabParamsToBoost();
 
+/** Return an arena that is accessible from both the host and GPU kernels.
+ *
+ * Pinned host memory is preferred. On CUDA systems where pinned allocations
+ * cannot be mapped into the active device address space, managed memory is
+ * used instead.
+ */
+amrex::Arena* GetHostDeviceArena () noexcept;
+
 /** Check the warpx.dims matches the binary name & set up RZ gridding
  *
  * Ensures that the blocks are setup correctly for the RZ spectral solver

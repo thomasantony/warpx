@@ -15,6 +15,7 @@
 #include "Utils/Parser/ParserUtils.H"
 #include "Utils/TextMsg.H"
 #include "Utils/WarpXConst.H"
+#include "Utils/WarpXUtil.H"
 #include "WarpX.H"
 
 #include <AMReX.H>
@@ -138,7 +139,7 @@ void ParticleHistogram2D::ComputeDiags (int step)
     Array<int,2> tlo{0,0}; // lower bounds
     Array<int,2> thi{m_bin_num_abs-1, m_bin_num_ord-1}; // inclusive upper bounds
     amrex::TableData<amrex::ParticleReal,2> d_data_2D(tlo, thi);
-    m_h_data_2D.resize(tlo, thi, The_Pinned_Arena());
+    m_h_data_2D.resize(tlo, thi, GetHostDeviceArena());
     auto const& h_table_data = m_h_data_2D.table();
 
     // Initialize data on the host

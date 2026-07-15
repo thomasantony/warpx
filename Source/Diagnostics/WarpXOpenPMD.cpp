@@ -13,6 +13,7 @@
 #include "Utils/TextMsg.H"
 #include "Utils/Parser/ParserUtils.H"
 #include "Utils/WarpXAlgorithmSelection.H"
+#include "Utils/WarpXUtil.H"
 #include "WarpX.H"
 #include "OpenPMDHelpFunction.H"
 
@@ -550,7 +551,7 @@ for (const auto & particle_diag : particle_diags) {
     WarpXParticleContainer::Base tmp = (isBTD || use_pinned_pc) ?
         pinned_pc->make_alike<>() :
         pc->make_alike<>();
-    tmp.SetArena(amrex::The_Pinned_Arena());
+    tmp.SetArena(GetHostDeviceArena());
 
     const auto mass = pc->AmIA<PhysicalSpecies::photon>() ? PhysConst::m_e : pc->getMass();
     RandomFilter const random_filter(particle_diag.m_do_random_filter,
@@ -1594,7 +1595,8 @@ WarpXOpenPMDPlot::WriteOpenPMDFieldsAll ( //const std::string& filename,
                         auto dynamicMemoryView = mesh_comp.storeChunk<amrex::Real>(
                              chunk_offset, chunk_size,
                              [&local_box](size_t /* size */) {
-                                  amrex::BaseFab<amrex::Real> foo(local_box, 1, amrex::The_Pinned_Arena());
+                                  amrex::BaseFab<amrex::Real> foo(
+                                      local_box, 1, GetHostDeviceArena());
                                   std::shared_ptr<amrex::Real> data_pinned(foo.release());
                                   return data_pinned;
                               });
@@ -1603,7 +1605,7 @@ WarpXOpenPMDPlot::WriteOpenPMDFieldsAll ( //const std::string& filename,
                     } else
                     {
                         ABLASTR_PROFILE("WarpXOpenPMDPlot::WriteOpenPMDFields::D2H()");
-                        amrex::BaseFab<amrex::Real> foo(local_box, 1, amrex::The_Pinned_Arena());
+                        amrex::BaseFab<amrex::Real> foo(local_box, 1, GetHostDeviceArena());
                         std::shared_ptr<amrex::Real> data_pinned(foo.release());
                         amrex::Gpu::dtoh_memcpy_async(data_pinned.get(), fab.dataPtr(icomp), local_box.numPts()*sizeof(amrex::Real));
                         // intentionally delayed until before we .flush(): amrex::Gpu::streamSynchronize();

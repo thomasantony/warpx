@@ -17,6 +17,7 @@
 #include "Utils/ParticleUtils.H"
 #include "Utils/Parser/ParserUtils.H"
 #include "Utils/WarpXConst.H"
+#include "Utils/WarpXUtil.H"
 #include "Utils/TextMsg.H"
 #include "WarpX.H"
 
@@ -117,7 +118,7 @@ DifferentialLuminosity2D::DifferentialLuminosity2D (const std::string& rd_name)
     // resize data array on the host
     amrex::Array<int,2> tlo{0,0}; // lower bounds
     amrex::Array<int,2> thi{m_bin_num_1-1, m_bin_num_2-1}; // inclusive upper bounds
-    m_h_data_2D.resize(tlo, thi, amrex::The_Pinned_Arena());
+    m_h_data_2D.resize(tlo, thi, GetHostDeviceArena());
 
     auto const& h_table_data = m_h_data_2D.table();
     // initialize data on the host

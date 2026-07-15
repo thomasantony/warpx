@@ -12,6 +12,7 @@
 #include "Fields.H"
 #include "Particles/MultiParticleContainer_fwd.H"
 #include "Python/callbacks.H"
+#include "Utils/WarpXUtil.H"
 #include "WarpX.H"
 
 using namespace amrex;
@@ -140,11 +141,13 @@ void LabFrameExplicitES::computePhiTriDiagonal (
     const amrex::Vector<int> pmap = {0}; // The data will only be on processor 0
     const amrex::DistributionMapping dm_full_domain(pmap);
 
-    // Put the data in the pinned arena since the tridiag solver will be done on the CPU, but have
-    // the data readily accessible from the GPU.
-    auto phi1d_mf = MultiFab(ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(The_Pinned_Arena()));
-    auto zwork1d_mf = MultiFab(ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(The_Pinned_Arena()));
-    auto rho1d_mf = MultiFab(ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(The_Pinned_Arena()));
+    // The tridiag solver runs on the CPU, while ParallelCopy can access the data from the GPU.
+    auto phi1d_mf = MultiFab(
+        ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(GetHostDeviceArena()));
+    auto zwork1d_mf = MultiFab(
+        ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(GetHostDeviceArena()));
+    auto rho1d_mf = MultiFab(
+        ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(GetHostDeviceArena()));
 
     if (field_boundary_lo0 == FieldBoundaryType::PEC || field_boundary_hi0 == FieldBoundaryType::PEC) {
         // Copy from phi to get the boundary values
@@ -263,13 +266,15 @@ void LabFrameExplicitES::computePhiTriDiagonal_periodic (
     const amrex::Vector<int> pmap = {0}; // The data will only be on processor 0
     const amrex::DistributionMapping dm_full_domain(pmap);
 
-    // Put the data in the pinned arena since the tridiag solver will be done on the CPU, but have
-    // the data readily accessible from the GPU.
-    auto phi1d_mf = MultiFab(ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(The_Pinned_Arena()));
+    // The tridiag solver runs on the CPU, while ParallelCopy can access the data from the GPU.
+    auto phi1d_mf = MultiFab(
+        ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(GetHostDeviceArena()));
 
     // Work arrays
-    auto cmod_mf = MultiFab(ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(The_Pinned_Arena()));
-    auto u_mf = MultiFab(ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(The_Pinned_Arena()));
+    auto cmod_mf = MultiFab(
+        ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(GetHostDeviceArena()));
+    auto u_mf = MultiFab(
+        ba_full_domain_node, dm_full_domain, 1, 0, MFInfo().SetArena(GetHostDeviceArena()));
 
     // Copy rho into phi1d_mf to start
     phi1d_mf.ParallelCopy(*rho[lev], 0, 0, 1);

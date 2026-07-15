@@ -26,6 +26,7 @@
 #include <AMReX_FArrayBox.H>
 #include <AMReX_FabArray.H>
 #include <AMReX_GpuControl.H>
+#include <AMReX_GpuDevice.H>
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_MFIter.H>
 #include <AMReX_MultiFab.H>
@@ -42,6 +43,36 @@
 #include <limits>
 
 using namespace amrex;
+
+amrex::Arena* GetHostDeviceArena () noexcept
+{
+#if defined(AMREX_USE_CUDA)
+    static bool const can_access_pinned_host_memory = [] () noexcept {
+        int can_map = 0;
+        if (cudaDeviceGetAttribute(&can_map, cudaDevAttrCanMapHostMemory,
+                                   amrex::Gpu::Device::deviceId()) != cudaSuccess || !can_map) {
+            cudaGetLastError();
+            return false;
+        }
+
+        void* host_ptr = nullptr;
+        if (cudaHostAlloc(&host_ptr, sizeof(void*), cudaHostAllocMapped) != cudaSuccess) {
+            cudaGetLastError();
+            return false;
+        }
+
+        void* device_ptr = nullptr;
+        bool const can_access =
+            cudaHostGetDevicePointer(&device_ptr, host_ptr, 0) == cudaSuccess;
+        if (!can_access) { cudaGetLastError(); }
+        cudaFreeHost(host_ptr);
+        return can_access;
+    }();
+
+    if (!can_access_pinned_host_memory) { return amrex::The_Managed_Arena(); }
+#endif
+    return amrex::The_Pinned_Arena();
+}
 
 void ReadBoostedFrameParameters(Real& gamma_boost, Real& beta_boost,
                                 Vector<int>& boost_direction)

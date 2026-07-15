@@ -8,6 +8,7 @@
 #include "FieldProbeParticleContainer.H"
 
 #include "Utils/TextMsg.H"
+#include "Utils/WarpXUtil.H"
 
 #include <AMReX_AmrCore.H>
 #include <AMReX_AmrParGDB.H>
@@ -65,7 +66,8 @@ FieldProbeParticleContainer::AddNParticles (int lev,
     PinnedTile pinned_tile;
     auto soa_rdata_names = GetRealSoANames();
     auto soa_idata_names = GetIntSoANames();
-    pinned_tile.define(NumRuntimeRealComps(), NumRuntimeIntComps(), &soa_rdata_names, &soa_idata_names, amrex::The_Pinned_Arena());
+    pinned_tile.define(NumRuntimeRealComps(), NumRuntimeIntComps(), &soa_rdata_names,
+                       &soa_idata_names, GetHostDeviceArena());
 
     for (int i = 0; i < np; i++)
     {
