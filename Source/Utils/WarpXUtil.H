@@ -35,9 +35,8 @@ void ConvertLabParamsToBoost();
 
 /** Return an arena that is accessible from both the host and GPU kernels.
  *
- * Pinned host memory is preferred. On CUDA systems where pinned allocations
- * cannot be mapped into the active device address space, managed memory is
- * used instead.
+ * Pinned host memory is preferred. When pinned allocations cannot be mapped
+ * into the active device address space, managed memory is used instead.
  */
 amrex::Arena* GetHostDeviceArena () noexcept;
 

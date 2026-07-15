@@ -70,6 +70,30 @@ amrex::Arena* GetHostDeviceArena () noexcept
     }();
 
     if (!can_access_pinned_host_memory) { return amrex::The_Managed_Arena(); }
+#elif defined(AMREX_USE_HIP)
+    static bool const can_access_pinned_host_memory = [] () noexcept {
+        int can_map = 0;
+        if (hipDeviceGetAttribute(&can_map, hipDeviceAttributeCanMapHostMemory,
+                                  amrex::Gpu::Device::deviceId()) != hipSuccess || !can_map) {
+            hipGetLastError();
+            return false;
+        }
+
+        void* host_ptr = nullptr;
+        if (hipHostMalloc(&host_ptr, sizeof(void*), hipHostMallocMapped) != hipSuccess) {
+            hipGetLastError();
+            return false;
+        }
+
+        void* device_ptr = nullptr;
+        bool const can_access =
+            hipHostGetDevicePointer(&device_ptr, host_ptr, 0) == hipSuccess;
+        if (!can_access) { hipGetLastError(); }
+        hipHostFree(host_ptr);
+        return can_access;
+    }();
+
+    if (!can_access_pinned_host_memory) { return amrex::The_Managed_Arena(); }
 #endif
     return amrex::The_Pinned_Arena();
 }
