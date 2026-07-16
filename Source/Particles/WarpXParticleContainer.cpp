@@ -24,7 +24,6 @@
 #include "Utils/TextMsg.H"
 #include "Utils/WarpXAlgorithmSelection.H"
 #include "Utils/WarpXConst.H"
-#include "Utils/WarpXUtil.H"
 #include "Utils/Parser/ParserUtils.H"
 #include "WarpX.H"
 
@@ -226,8 +225,7 @@ WarpXParticleContainer::AddNParticles (int /*lev*/, long n,
     PinnedTile pinned_tile;
     auto soa_rdata_names = GetRealSoANames();
     auto soa_idata_names = GetIntSoANames();
-    pinned_tile.define(NumRuntimeRealComps(), NumRuntimeIntComps(), &soa_rdata_names,
-                       &soa_idata_names, GetHostDeviceArena());
+    pinned_tile.define(NumRuntimeRealComps(), NumRuntimeIntComps(), &soa_rdata_names, &soa_idata_names, amrex::The_Pinned_Arena());
 
     const std::size_t np = iend-ibegin;
 

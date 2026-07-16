@@ -68,20 +68,18 @@ RunPod caveats:
 - The MPI in this image is intended for single-container runs. Multi-node cloud
   MPI needs provider-specific networking and launch configuration.
 
-## Mapped pinned host-memory compatibility
+## GPU reduction compatibility
 
-The image includes an AMReX fallback for GPU container runtimes that do not
-support device access to mapped pinned host memory. At startup, AMReX probes
-the selected CUDA device with `cudaHostAllocMapped` and
+The image includes an AMReX reduction fallback for GPU container runtimes that
+do not support device access to mapped pinned host memory. At startup, AMReX
+probes the selected CUDA device with `cudaHostAllocMapped` and
 `cudaHostGetDevicePointer`. The fallback is enabled automatically when that
 probe fails.
 
-Buffers that must be accessed by both host code and GPU kernels use mapped
-pinned memory when available and managed memory otherwise. This covers GPU
-reductions and scans, device function pointers, particle initialization and
-output staging, particle communication buffers, and other direct
-host-and-device buffer uses. Pinned memory remains available for ordinary
-device-to-host copies and MPI staging that do not dereference it in a kernel.
+This makes GPU reduction and scan result scalars write to device memory first,
+then copy to the host, instead of writing directly to mapped host memory. It
+also computes `ParticleLocator` box bounds on the host and avoids direct
+mapped-host writes when obtaining device function pointers.
 
 ## Optional S3/R2 Uploads
 

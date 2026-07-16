@@ -1,166 +1,27 @@
-diff --git a/Src/Base/AMReX_Arena.H b/Src/Base/AMReX_Arena.H
-index 007f75028..c419625f8 100644
---- a/Src/Base/AMReX_Arena.H
-+++ b/Src/Base/AMReX_Arena.H
-@@ -63,6 +63,11 @@ Arena* The_Managed_Arena ();
- //! Return a pointer to `The_Pinned_Arena`, the pinned memory arena.
- Arena* The_Pinned_Arena ();
- //! \ingroup amrex_memory
-+//! Return a host-accessible arena that is also accessible from GPU kernels.
-+//! This is the pinned arena when mapped host memory is supported and the
-+//! managed arena otherwise.
-+Arena* The_Host_Device_Arena ();
-+//! \ingroup amrex_memory
- //! Return a pointer to `The_Comms_Arena`, the memory arena used by
- //! communication buffers.
- Arena* The_Comms_Arena ();
-diff --git a/Src/Base/AMReX_Arena.cpp b/Src/Base/AMReX_Arena.cpp
-index f7ecab4ab..cf2d9bd54 100644
---- a/Src/Base/AMReX_Arena.cpp
-+++ b/Src/Base/AMReX_Arena.cpp
-@@ -66,7 +66,8 @@ bool
- Arena::isDeviceAccessible () const
- {
- #ifdef AMREX_USE_GPU
--    return ! arena_info.use_cpu_memory;
-+    return !arena_info.use_cpu_memory &&
-+        (!arena_info.device_use_hostalloc || Gpu::Device::canAccessPinnedHostMemory());
- #else
-     return false;
- #endif
-@@ -552,7 +553,7 @@ Arena::Initialize (bool minimal)
-             the_comms_arena->registerForProfiling("Comms Memory");
-         }
-     } else {
--        the_comms_arena = the_pinned_arena;
-+        the_comms_arena = The_Host_Device_Arena();
-     }
- #else
-     the_comms_arena = The_BArena();
-@@ -866,6 +867,17 @@ The_Pinned_Arena ()
-     }
- }
-
-+Arena*
-+The_Host_Device_Arena ()
-+{
-+#ifdef AMREX_USE_GPU
-+    if (!Gpu::Device::canAccessPinnedHostMemory()) {
-+        return The_Managed_Arena();
-+    }
-+#endif
-+    return The_Pinned_Arena();
-+}
-+
- Arena*
- The_Cpu_Arena ()
- {
-diff --git a/Src/Base/AMReX_FabArrayUtility.H b/Src/Base/AMReX_FabArrayUtility.H
-index a3e7b41b4..605c2e987 100644
---- a/Src/Base/AMReX_FabArrayUtility.H
-+++ b/Src/Base/AMReX_FabArrayUtility.H
-@@ -1057,7 +1057,7 @@ printCell (FabArray<FAB> const& mf, const IntVect& cell, int comp = -1,
-         if (bx.contains(cell)) {
-             int n = (comp >= 0) ? 1 : mf.nComp();
-             auto const& fab = mf.const_array(mfi);
--            Gpu::PinnedVector<typename FAB::value_type> pv(n);
-+            Gpu::HostDeviceVector<typename FAB::value_type> pv(n);
-             auto* dp = pv.data();
-             auto f = [=] AMREX_GPU_HOST_DEVICE ()
-                 {
-diff --git a/Src/Base/AMReX_GpuAllocators.H b/Src/Base/AMReX_GpuAllocators.H
-index b92a9e8ae..76c6d7abc 100644
---- a/Src/Base/AMReX_GpuAllocators.H
-+++ b/Src/Base/AMReX_GpuAllocators.H
-@@ -86,6 +86,12 @@ namespace amrex {
-         }
-     };
-
-+    struct HostDeviceArenaWrapper {
-+        [[nodiscard]] static Arena* arena () noexcept {
-+            return The_Host_Device_Arena();
-+        }
-+    };
-+
-     struct ManagedArenaWrapper {
-         [[nodiscard]] static Arena* arena () noexcept {
-             return The_Managed_Arena();
-@@ -135,6 +141,13 @@ namespace amrex {
-     {
-     };
-
-+    /// \ingroup amrex_memory
-+    template<typename T>
-+    class HostDeviceArenaAllocator
-+        : public ArenaAllocatorBase<T,HostDeviceArenaWrapper>
-+    {
-+    };
-+
-     /// \ingroup amrex_memory
-     template<typename T>
-     class ManagedArenaAllocator
-@@ -196,6 +209,9 @@ namespace amrex {
-     template <typename T>
-     struct RunOnGpu<ManagedArenaAllocator<T> > : std::true_type {};
-
-+    template <typename T>
-+    struct RunOnGpu<HostDeviceArenaAllocator<T> > : std::true_type {};
-+
-     template <typename T>
-     struct RunOnGpu<AsyncArenaAllocator<T> > : std::true_type {};
- #endif // AMREX_USE_GPU
-diff --git a/Src/Base/AMReX_GpuContainers.H b/Src/Base/AMReX_GpuContainers.H
-index 7a479b444..24669a26a 100644
---- a/Src/Base/AMReX_GpuContainers.H
-+++ b/Src/Base/AMReX_GpuContainers.H
-@@ -47,6 +47,16 @@ namespace amrex::Gpu {
-     template <class T>
-     using PinnedVector = PODVector<T, PinnedArenaAllocator<T> >;
-
-+    /**
-+     * \ingroup amrex_linear_containers
-+     * \brief A host-accessible PODVector that GPU kernels can access.
-+     *
-+     * Uses pinned memory when mapped host memory is supported and managed
-+     * memory otherwise.
-+     */
-+    template <class T>
-+    using HostDeviceVector = PODVector<T, HostDeviceArenaAllocator<T> >;
-+
-     /**
-      * \ingroup amrex_linear_containers
-      * \brief A PODVector that uses the async memory arena.
-@@ -95,6 +105,9 @@ namespace amrex::Gpu {
-     template <class T>
-     using PinnedVector = PODVector<T>;
-
-+    template <class T>
-+    using HostDeviceVector = PODVector<T>;
-+
-     template <class T>
-     using AsyncVector = PODVector<T>;
- #endif
 diff --git a/Src/Base/AMReX_GpuDevice.H b/Src/Base/AMReX_GpuDevice.H
-index 81ca11eaf..c6d33f408 100644
+index 81ca11eaf..350c2513f 100644
 --- a/Src/Base/AMReX_GpuDevice.H
 +++ b/Src/Base/AMReX_GpuDevice.H
-@@ -127,6 +127,8 @@ public:
+@@ -127,6 +127,11 @@ public:
  #endif
-
+ 
      static int deviceId () noexcept;
-+    /** True if the active GPU can access mapped pinned host allocations. */
++    /**
++     * True if CUDA can map a pinned host allocation into the active GPU's
++     * address space.
++     */
 +    static bool canAccessPinnedHostMemory () noexcept;
      static int numDevicesUsed () noexcept; // Total number of device used
      static int numDevicePartners () noexcept; // Number of partners sharing my device
-
+ 
 diff --git a/Src/Base/AMReX_GpuDevice.cpp b/Src/Base/AMReX_GpuDevice.cpp
-index d6f3e3fe1..97ca3311a 100644
+index d6f3e3fe1..95e59c3ba 100644
 --- a/Src/Base/AMReX_GpuDevice.cpp
 +++ b/Src/Base/AMReX_GpuDevice.cpp
-@@ -694,6 +694,60 @@ Device::deviceId () noexcept
+@@ -694,6 +694,34 @@ Device::deviceId () noexcept
      return device_id;
  }
-
+ 
 +bool
 +Device::canAccessPinnedHostMemory () noexcept
 +{
@@ -171,43 +32,17 @@ index d6f3e3fe1..97ca3311a 100644
 +        int can_map = 0;
 +        if (cudaDeviceGetAttribute(&can_map, cudaDevAttrCanMapHostMemory,
 +                                   Device::deviceId()) != cudaSuccess || !can_map) {
-+            cudaGetLastError();
 +            return;
 +        }
 +
 +        void* host_ptr = nullptr;
 +        if (cudaHostAlloc(&host_ptr, sizeof(void*), cudaHostAllocMapped) != cudaSuccess) {
-+            cudaGetLastError();
 +            return;
 +        }
 +
 +        void* device_ptr = nullptr;
 +        can_access = cudaHostGetDevicePointer(&device_ptr, host_ptr, 0) == cudaSuccess;
-+        if (!can_access) { cudaGetLastError(); }
 +        cudaFreeHost(host_ptr);
-+    });
-+    return can_access;
-+#elif defined(AMREX_USE_HIP)
-+    static bool can_access = false;
-+    static std::once_flag flag;
-+    std::call_once(flag, [] () {
-+        int can_map = 0;
-+        if (hipDeviceGetAttribute(&can_map, hipDeviceAttributeCanMapHostMemory,
-+                                  Device::deviceId()) != hipSuccess || !can_map) {
-+            hipGetLastError();
-+            return;
-+        }
-+
-+        void* host_ptr = nullptr;
-+        if (hipHostMalloc(&host_ptr, sizeof(void*), hipHostMallocMapped) != hipSuccess) {
-+            hipGetLastError();
-+            return;
-+        }
-+
-+        void* device_ptr = nullptr;
-+        can_access = hipHostGetDevicePointer(&device_ptr, host_ptr, 0) == hipSuccess;
-+        if (!can_access) { hipGetLastError(); }
-+        hipHostFree(host_ptr);
 +    });
 +    return can_access;
 +#else
@@ -219,255 +54,133 @@ index d6f3e3fe1..97ca3311a 100644
  Device::numDevicesUsed () noexcept
  {
 diff --git a/Src/Base/AMReX_GpuUtility.H b/Src/Base/AMReX_GpuUtility.H
-index 9998e5cff..aa062b758 100644
+index 9998e5cff..71cdbf1fb 100644
 --- a/Src/Base/AMReX_GpuUtility.H
 +++ b/Src/Base/AMReX_GpuUtility.H
-@@ -247,11 +247,11 @@ using Gpu::isinf;
- /* Somehow I cannot get cudaMemcpyFromSymbol to work. */
+@@ -248,8 +248,15 @@ using Gpu::isinf;
  #define AMREX_GET_DEVICE_FUNC_PTR(FP_t, sym) \
      [] () { \
--        auto* amrex_i_hp = (FP_t*) amrex::The_Pinned_Arena()->alloc(sizeof(FP_t)); \
-+        auto* amrex_i_hp = (FP_t*) amrex::The_Host_Device_Arena()->alloc(sizeof(FP_t)); \
-         amrex::single_task([=] AMREX_GPU_DEVICE () { *amrex_i_hp = sym; }); \
+         auto* amrex_i_hp = (FP_t*) amrex::The_Pinned_Arena()->alloc(sizeof(FP_t)); \
+-        amrex::single_task([=] AMREX_GPU_DEVICE () { *amrex_i_hp = sym; }); \
++        bool amrex_i_use_device_result = !amrex::Gpu::Device::canAccessPinnedHostMemory(); \
++        auto* amrex_i_dp = amrex_i_use_device_result \
++            ? (FP_t*) amrex::The_Arena()->alloc(sizeof(FP_t)) : amrex_i_hp; \
++        amrex::single_task([=] AMREX_GPU_DEVICE () { *amrex_i_dp = sym; }); \
          amrex::Gpu::streamSynchronize(); \
++        if (amrex_i_use_device_result) { \
++            amrex::Gpu::dtoh_memcpy(amrex_i_hp, amrex_i_dp, sizeof(FP_t)); \
++            amrex::The_Arena()->free(amrex_i_dp); \
++        } \
          auto amrex_i_r = *amrex_i_hp; \
--        amrex::The_Pinned_Arena()->free(amrex_i_hp); \
-+        amrex::The_Host_Device_Arena()->free(amrex_i_hp); \
+         amrex::The_Pinned_Arena()->free(amrex_i_hp); \
          return amrex_i_r; \
-     } ()
- #elif !defined(AMREX_USE_SYCL)
 diff --git a/Src/Base/AMReX_Reduce.H b/Src/Base/AMReX_Reduce.H
-index 3a808f429..ea234669b 100644
+index 3a808f429..f0c41f8f7 100644
 --- a/Src/Base/AMReX_Reduce.H
 +++ b/Src/Base/AMReX_Reduce.H
-@@ -442,7 +442,7 @@ public:
-     template <typename... Ps>
-     explicit ReduceData (ReduceOps<Ps...>& reduce_op)
-         : m_max_blocks(Gpu::Device::maxBlocksPerLaunch()),
--          m_host_tuple((Type*)(The_Pinned_Arena()->alloc(sizeof(Type)))),
-+          m_host_tuple((Type*)(The_Host_Device_Arena()->alloc(sizeof(Type)))),
-           m_device_tuple((Type*)(The_Arena()->alloc((AMREX_GPU_MAX_STREAMS)
-                                                     * m_max_blocks * sizeof(Type)))),
-           m_fn_value([&reduce_op,this] () -> Type { return this->value(reduce_op); })
-@@ -461,7 +461,7 @@ public:
-         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
-             !m_used_external_stream || m_value_called,
-             "ReduceData used on an external GPU stream must call value() before destruction.");
--        The_Pinned_Arena()->free(m_host_tuple);
-+        The_Host_Device_Arena()->free(m_host_tuple);
-         The_Arena()->free(m_device_tuple);
+@@ -491,6 +491,9 @@ public:
      }
-
-@@ -902,6 +902,7 @@ public:
+ 
+     Type* hostPtr () { return m_host_tuple; }
++    bool useDeviceResult () const noexcept {
++        return !Gpu::Device::canAccessPinnedHostMemory();
++    }
+ 
+     GpuArray<int,AMREX_GPU_MAX_STREAMS>& nBlocks () { return m_nblocks; }
+     int& nBlocks (gpuStream_t const& s) { return m_nblocks[streamIndexChecked(s)]; }
+@@ -902,6 +905,12 @@ public:
              Gpu::dtoh_memcpy_async(hp, dtmp.data(), sizeof(ReduceTuple));
  #endif
  #else
++            Gpu::DeviceVector<ReduceTuple> dtmp;
 +            auto presult = hp;
++            if (reduce_data.useDeviceResult()) {
++                dtmp.resize(1);
++                presult = dtmp.data();
++            }
              amrex::launch<AMREX_GPU_MAX_THREADS>(1, 0, stream,
              [=] AMREX_GPU_DEVICE () noexcept
              {
-@@ -916,7 +917,7 @@ public:
+@@ -916,8 +925,11 @@ public:
                      }
                  }
                  Reduce::detail::for_each_parallel<0, ReduceTuple, Ps...>(dst, r);
 -                if (threadIdx.x == 0) { *hp = dst; }
 +                if (threadIdx.x == 0) { *presult = dst; }
              });
++            if (reduce_data.useDeviceResult()) {
++                Gpu::dtoh_memcpy_async(hp, presult, sizeof(ReduceTuple));
++            }
  #endif
              Gpu::streamSynchronize();
+         }
 diff --git a/Src/Base/AMReX_Scan.H b/Src/Base/AMReX_Scan.H
-index 8f2d08e18..6054183fb 100644
+index 8f2d08e18..f5a9564b4 100644
 --- a/Src/Base/AMReX_Scan.H
 +++ b/Src/Base/AMReX_Scan.H
-@@ -695,7 +695,8 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
-         scan_tile_state.initialize_prefix(gid, nblocks);
-     });
-
--    T* totalsum_p = (a_ret_sum) ? (T*)(The_Pinned_Arena()->alloc(sizeof(T))) : nullptr;
-+    T* totalsum_p = (a_ret_sum) ?
-+        (T*)(The_Host_Device_Arena()->alloc(sizeof(T))) : nullptr;
-
-     amrex::launch_global<nthreads> <<<nblocks, nthreads, sm, stream>>> (
-     [=] AMREX_GPU_DEVICE () noexcept
-@@ -797,7 +798,7 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
-     }
-
-     T ret = (a_ret_sum) ? *totalsum_p : T(0);
--    if (totalsum_p) { The_Pinned_Arena()->free(totalsum_p); }
-+    if (totalsum_p) { The_Host_Device_Arena()->free(totalsum_p); }
-
-     return ret;
- }
-@@ -838,7 +839,8 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
+@@ -838,7 +838,12 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
          });
      }
-
+ 
 -    T* totalsum_p = (a_ret_sum) ? (T*)(The_Pinned_Arena()->alloc(sizeof(T))) : nullptr;
-+    T* totalsum_p = (a_ret_sum) ?
-+        (T*)(The_Host_Device_Arena()->alloc(sizeof(T))) : nullptr;
-
++    bool const use_device_result = !Gpu::Device::canAccessPinnedHostMemory();
++    T* totalsum_h = (a_ret_sum) ? (T*)(The_Pinned_Arena()->alloc(sizeof(T))) : nullptr;
++    T* totalsum_p = totalsum_h;
++    if (use_device_result && a_ret_sum) {
++        totalsum_p = (T*)(The_Arena()->alloc(sizeof(T)));
++    }
+ 
      amrex::launch_global<nthreads> <<<nblocks, nthreads, sm, stream>>> (
      [=] AMREX_GPU_DEVICE () noexcept
-@@ -946,7 +948,7 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
+@@ -940,13 +945,18 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
+         Gpu::streamSynchronize();
+         AMREX_GPU_ERROR_CHECK();
+ 
++        if (use_device_result) {
++            Gpu::dtoh_memcpy(totalsum_h, totalsum_p, sizeof(T));
++            The_Arena()->free(totalsum_p);
++        }
++
+         The_Arena()->free(tile_state_p);
+     } else {
+         Gpu::freeAsync(The_Arena(), tile_state_p);
      }
-
-     T ret = (a_ret_sum) ? *totalsum_p : T(0);
+ 
+-    T ret = (a_ret_sum) ? *totalsum_p : T(0);
 -    if (totalsum_p) { The_Pinned_Arena()->free(totalsum_p); }
-+    if (totalsum_p) { The_Host_Device_Arena()->free(totalsum_p); }
-
++    T ret = (a_ret_sum) ? *totalsum_h : T(0);
++    if (totalsum_h) { The_Pinned_Arena()->free(totalsum_h); }
+ 
      return ret;
  }
-diff --git a/Src/Particle/AMReX_ParticleCommunication.H b/Src/Particle/AMReX_ParticleCommunication.H
-index 9c63931aa..dd5f19e97 100644
---- a/Src/Particle/AMReX_ParticleCommunication.H
-+++ b/Src/Particle/AMReX_ParticleCommunication.H
-@@ -602,9 +602,10 @@ void packBuffer (const PC& pc, const ParticleCopyOp& op, const ParticleCopyPlan&
-         total_buffer_size = plan.m_snd_offsets.back();
-     }
-
--    if (! snd_buffer.arena()->hasFreeDeviceMemory(total_buffer_size)) {
-+    if ((Gpu::inLaunchRegion() && !snd_buffer.arena()->isDeviceAccessible()) ||
-+        !snd_buffer.arena()->hasFreeDeviceMemory(total_buffer_size)) {
-         snd_buffer.clear();
--        snd_buffer.setArena(The_Pinned_Arena());
-+        snd_buffer.setArena(The_Host_Device_Arena());
-     }
-     snd_buffer.resize(total_buffer_size);
-
-diff --git a/Src/Particle/AMReX_ParticleIO.H b/Src/Particle/AMReX_ParticleIO.H
-index b4bbd3a79..39a763c3d 100644
---- a/Src/Particle/AMReX_ParticleIO.H
-+++ b/Src/Particle/AMReX_ParticleIO.H
-@@ -1118,7 +1118,7 @@ ParticleContainer_impl<ParticleType, NArrayReal, NArrayInt, Allocator, CellAssig
-                     ParticleTile<ParticleType, NArrayReal, NArrayInt,
-                                  amrex::PolymorphicArenaAllocator> pinned_ptile;
-                     pinned_ptile.define(NumRuntimeRealComps(), NumRuntimeIntComps(),
--                                        nullptr, nullptr, The_Pinned_Arena());
-+                                        nullptr, nullptr, The_Host_Device_Arena());
-                     pinned_ptile.resize(kv.second.numParticles());
-                     amrex::copyParticles(pinned_ptile, kv.second);
-                     const auto& host_aos = pinned_ptile.GetArrayOfStructs();
-diff --git a/Src/Particle/AMReX_ParticleInit.H b/Src/Particle/AMReX_ParticleInit.H
-index 5b45e4ae1..41d46a157 100644
---- a/Src/Particle/AMReX_ParticleInit.H
-+++ b/Src/Particle/AMReX_ParticleInit.H
-@@ -1492,7 +1492,8 @@ InitOnePerCell (Real x_off, Real y_off, Real z_off, const ParticleInitData& pdat
-         Box grid = ParticleBoxArray(0)[mfi.index()];
-         auto ind = std::make_pair(mfi.index(), mfi.LocalTileIndex());
-         RealBox grid_box (grid,dx,geom.ProbLo());
--        ParticleTile<ParticleType, NArrayReal, NArrayInt, amrex::PinnedArenaAllocator> ptile_tmp;
-+        ParticleTile<ParticleType, NArrayReal, NArrayInt,
-+                     amrex::HostDeviceArenaAllocator> ptile_tmp;
-         for (IntVect beg = grid.smallEnd(), end=grid.bigEnd(), cell = grid.smallEnd(); cell <= end; grid.next(cell))
-         {
-             // the real struct data
-diff --git a/Src/Particle/AMReX_TracerParticles.cpp b/Src/Particle/AMReX_TracerParticles.cpp
-index 5caab3bbd..23ce9d36f 100644
---- a/Src/Particle/AMReX_TracerParticles.cpp
-+++ b/Src/Particle/AMReX_TracerParticles.cpp
-@@ -270,7 +270,7 @@ TracerParticleContainer::Timestamp (const std::string&      basename,
-                 const auto& pmap = GetParticles(lev);
-                 for (const auto& kv : pmap) {
-                   using PinnedTile = amrex::ParticleTile<Particle<AMREX_SPACEDIM, 0>, 0, 0,
--                                                         amrex::PinnedArenaAllocator>;
-+                                                         amrex::HostDeviceArenaAllocator>;
-                   PinnedTile pinned_tile;
-                   pinned_tile.define(NumRuntimeRealComps(), NumRuntimeIntComps());
-                   pinned_tile.resize(kv.second.numParticles());
-diff --git a/Src/Particle/AMReX_WriteBinaryParticleData.H b/Src/Particle/AMReX_WriteBinaryParticleData.H
-index ba6adc4f6..f0913bf39 100644
---- a/Src/Particle/AMReX_WriteBinaryParticleData.H
-+++ b/Src/Particle/AMReX_WriteBinaryParticleData.H
-@@ -924,7 +924,7 @@ void WriteBinaryParticleDataAsync (PC const& pc,
-         }
-     }
-
--    // make tmp particle tiles in pinned memory to write
-+    // Make temporary host-accessible particle tiles that GPU kernels can fill.
-     using PinnedPTile = std::conditional_t<
-         PC::is_rtsoa_pc,
-         typename PC::ParticleTileType,
-@@ -949,7 +949,7 @@ void WriteBinaryParticleDataAsync (PC const& pc,
-                 const auto runtime_int_comps = ptile.NumRuntimeIntComps();
-
-                 new_ptile.define(runtime_real_comps, runtime_int_comps,
--                    nullptr, nullptr, The_Pinned_Arena());
-+                    nullptr, nullptr, The_Host_Device_Arena());
-
-                 new_ptile.resize(np);
-
-diff --git a/Tests/CallNoinline/main.cpp b/Tests/CallNoinline/main.cpp
-index 05f535e3e..d45452be9 100644
---- a/Tests/CallNoinline/main.cpp
-+++ b/Tests/CallNoinline/main.cpp
-@@ -51,8 +51,8 @@ int main(int argc, char* argv[])
-         S s{};
-         P p{};
-
--        amrex::Gpu::HostVector<double> ones(2);
--        amrex::Gpu::HostVector<double> zeroes(3);
-+        amrex::Gpu::HostDeviceVector<double> ones(2);
-+        amrex::Gpu::HostDeviceVector<double> zeroes(3);
-         auto* p1 = ones.data();
-         auto* p0 = zeroes.data();
-
-diff --git a/Tests/DeviceGlobal/work.cpp b/Tests/DeviceGlobal/work.cpp
-index 8350dad06..dd6c79734 100644
---- a/Tests/DeviceGlobal/work.cpp
-+++ b/Tests/DeviceGlobal/work.cpp
-@@ -3,7 +3,7 @@
-
- void work ()
- {
--    amrex::Gpu::PinnedVector<amrex::Long> pv;
-+    amrex::Gpu::HostDeviceVector<amrex::Long> pv;
-     pv.resize(5,0);
-     auto* p = pv.data();
-     amrex::ParallelFor(1, [=] AMREX_GPU_DEVICE (int)
-diff --git a/Tests/GPU/Vector/main.cpp b/Tests/GPU/Vector/main.cpp
-index 2af74bebc..1ab64a734 100644
---- a/Tests/GPU/Vector/main.cpp
-+++ b/Tests/GPU/Vector/main.cpp
-@@ -105,6 +105,7 @@ int main (int argc, char* argv[])
-         test_container<Gpu::HostVector   >();
-         test_container<Gpu::ManagedVector>();
-         test_container<Gpu::PinnedVector> ();
-+        test_container<Gpu::HostDeviceVector>();
-         test_container<Gpu::AsyncVector>  ();
-
-         async_test();
-diff --git a/Tests/ParserUserFn/main.cpp b/Tests/ParserUserFn/main.cpp
-index 652cc460d..0811ebaf0 100644
---- a/Tests/ParserUserFn/main.cpp
-+++ b/Tests/ParserUserFn/main.cpp
-@@ -59,7 +59,7 @@ int main (int argc, char* argv[])
-
-         auto const exe = parser.compile<2>();
-
--        Gpu::PinnedVector<double> result(1);
-+        Gpu::HostDeviceVector<double> result(1);
-         auto* pr = result.data();
-         amrex::ParallelFor(1, [=] AMREX_GPU_DEVICE (int)
-         {
-@@ -88,7 +88,7 @@ int main (int argc, char* argv[])
-
-         AMREX_ALWAYS_ASSERT(exe(x,y) == expected); // run on host
-
--        Gpu::PinnedVector<double> result(1);
-+        Gpu::HostDeviceVector<double> result(1);
-         auto* pr = result.data();
-         amrex::ParallelFor(1, [=] AMREX_GPU_DEVICE (int) // run one device
-         {
-diff --git a/Tests/Particles/SOAParticle/main.cpp b/Tests/Particles/SOAParticle/main.cpp
-index 9ac7c1743..9bf3f455a 100644
---- a/Tests/Particles/SOAParticle/main.cpp
-+++ b/Tests/Particles/SOAParticle/main.cpp
-@@ -116,7 +116,7 @@ void addParticles ()
-
-     // create a host-side particle buffer
-     auto tmp = pc.template make_alike<amrex::PolymorphicArenaAllocator>();
--    tmp.SetArena(The_Pinned_Arena());
-+    tmp.SetArena(The_Host_Device_Arena());
-     tmp.copyParticles(pc, true);
-
-     for (MyParIter pti(tmp, lev); pti.isValid(); ++pti) {
+diff --git a/Src/Particle/AMReX_ParticleLocator.H b/Src/Particle/AMReX_ParticleLocator.H
+index e8e9ebc17..9426959ef 100644
+--- a/Src/Particle/AMReX_ParticleLocator.H
++++ b/Src/Particle/AMReX_ParticleLocator.H
+@@ -154,1 +154,26 @@ public:
++        if (!Gpu::Device::canAccessPinnedHostMemory()) {
++            m_bins_lo = m_host_boxes[0].smallEnd();
++            m_bins_hi = m_host_boxes[0].bigEnd();
++            m_bin_size = m_host_boxes[0].length();
++            for (int i = 1; i < num_boxes; ++i) {
++                Box const& box = m_host_boxes[i];
++                m_bins_lo.min(box.smallEnd());
++                m_bins_hi.max(box.bigEnd());
++                m_bin_size.max(box.length());
++            }
++
++            m_num_bins = (m_bins_hi - m_bins_lo + m_bin_size) / m_bin_size;
++            Box bins_box(IntVect::TheZeroVector(),
++                         m_num_bins-IntVect::TheUnitVector());
++            IntVect bin_size = m_bin_size;
++            IntVect bins_lo = m_bins_lo;
++            auto *const boxes_ptr = m_device_boxes.dataPtr();
++            m_bins.build(num_boxes, boxes_ptr, bins_box,
++                         [=] AMREX_GPU_DEVICE (Box const& box) noexcept -> IntVect
++                         {
++                             return (box.smallEnd() - bins_lo) / bin_size;
++                         });
++            return;
++        }
++
+         // compute the lo, hi and the max box size in each direction
