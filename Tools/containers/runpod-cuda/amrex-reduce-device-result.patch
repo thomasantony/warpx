@@ -21,7 +21,7 @@ index d6f3e3fe1..a4c7750da 100644
 @@ -14,1 +14,2 @@
 +#include <cstdlib>
  #include <iostream>
-@@ -694,6 +695,18 @@ Device::deviceId () noexcept
+@@ -694,6 +695,23 @@ Device::deviceId () noexcept
      return device_id;
  }
  
