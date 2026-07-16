@@ -17,7 +17,6 @@
 #include <ablastr/profiler/ProfilerWrapper.H>
 
 #include <AMReX_Geometry.H>
-#include <AMReX_GpuDevice.H>
 #include <AMReX_ParmParse.H>
 #include <AMReX_Reduce.H>
 #include <AMReX_Tuple.H>
@@ -26,34 +25,6 @@
 #include <AMReX_RealVect.H>
 
 using namespace amrex::literals;
-
-namespace
-{
-    template <typename DstTile, typename SrcTile>
-    void copyParticlesDeviceToHost (
-        DstTile& dst, SrcTile const& src, amrex::Long const dst_start,
-        amrex::Long const count)
-    {
-        if (count == 0) { return; }
-
-        auto& dst_soa = dst.GetStructOfArrays();
-        auto const& src_soa = src.GetStructOfArrays();
-        amrex::Gpu::dtoh_memcpy_async(
-            dst_soa.GetIdCPUData().dataPtr() + dst_start,
-            src_soa.GetIdCPUData().dataPtr(), count * sizeof(uint64_t));
-        for (int comp = 0; comp < dst.NumRealComps(); ++comp) {
-            amrex::Gpu::dtoh_memcpy_async(
-                dst_soa.GetRealData(comp).dataPtr() + dst_start,
-                src_soa.GetRealData(comp).dataPtr(), count * sizeof(amrex::ParticleReal));
-        }
-        for (int comp = 0; comp < dst.NumIntComps(); ++comp) {
-            amrex::Gpu::dtoh_memcpy_async(
-                dst_soa.GetIntData(comp).dataPtr() + dst_start,
-                src_soa.GetIntData(comp).dataPtr(), count * sizeof(int));
-        }
-        amrex::Gpu::streamSynchronize();
-    }
-}
 
 
 struct IsOutsideDomainBoundary {
@@ -450,18 +421,10 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                 }
 
                 auto& species_buffer = buffer[i];
-                bool const stage_through_device =
-                    !amrex::Gpu::Device::canAccessPinnedHostMemory();
-                auto device_buffer = species_buffer.make_alike<>();
-                if (stage_through_device) { device_buffer.SetArena(amrex::The_Arena()); }
                 for (int lev = 0; lev < pc.numLevels(); ++lev){
                     for(PIter pti(pc, lev); pti.isValid(); ++pti){
                         species_buffer.DefineAndReturnParticleTile(
                             lev, pti.index(), pti.LocalTileIndex());
-                        if (stage_through_device) {
-                            device_buffer.DefineAndReturnParticleTile(
-                                lev, pti.index(), pti.LocalTileIndex());
-                        }
                     }
                 }
 
@@ -482,10 +445,6 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
 
                         auto& ptile_buffer =
                             species_buffer.ParticlesAt(lev, pti.index(), pti.LocalTileIndex());
-                        auto* ptile_device = stage_through_device
-                            ? &device_buffer.ParticlesAt(
-                                  lev, pti.index(), pti.LocalTileIndex())
-                            : nullptr;
 
                         const auto& ptile = plevel.at(index);
                         auto np = ptile.numParticles();
@@ -518,7 +477,6 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                           // the resize below will not shrink the capacity
                           if (new_np > capacity) { ptile_buffer.reserve(2*new_np); }
                           ptile_buffer.resize(new_np);
-                          if (stage_through_device) { ptile_device->resize(np_to_add); }
                         }
                         {
                           ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::filterAndTransform");
@@ -530,18 +488,11 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                           const int time_scraped_index = buf.GetRealCompIndex("timeScraped") - WarpXParticleContainer::NArrayReal;
                           const int normal_index = buf.GetRealCompIndex("nx") - WarpXParticleContainer::NArrayReal;
                           const int step = warpx_instance.getistep(0);
-                          auto transform = CopyAndTimestamp{
-                              step_scraped_index, delta_index, time_scraped_index, normal_index,
-                              step, cur_time, dt, idim, iside};
-                          if (stage_through_device) {
-                              auto const copied = amrex::filterAndTransformParticles(
-                                  *ptile_device, ptile, predicate, transform, 0, 0);
-                              copyParticlesDeviceToHost(
-                                  ptile_buffer, *ptile_device, dst_index, copied);
-                          } else {
-                              amrex::filterAndTransformParticles(
-                                  ptile_buffer, ptile, predicate, transform, 0, dst_index);
-                          }
+                          amrex::filterAndTransformParticles(ptile_buffer, ptile,
+                                                             predicate,
+                                                             CopyAndTimestamp{step_scraped_index, delta_index, time_scraped_index, normal_index,
+                                                                              step, cur_time, dt, idim, iside},
+                                                             0, dst_index);
                         }
                     }
                 }
@@ -581,18 +532,10 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
             }
 
             auto& species_buffer = buffer[i];
-            bool const stage_through_device =
-                !amrex::Gpu::Device::canAccessPinnedHostMemory();
-            auto device_buffer = species_buffer.make_alike<>();
-            if (stage_through_device) { device_buffer.SetArena(amrex::The_Arena()); }
             for (int lev = 0; lev < pc.numLevels(); ++lev) {
                 for (PIter pti(pc, lev); pti.isValid(); ++pti) {
                     species_buffer.DefineAndReturnParticleTile(
                         lev, pti.index(), pti.LocalTileIndex());
-                    if (stage_through_device) {
-                        device_buffer.DefineAndReturnParticleTile(
-                            lev, pti.index(), pti.LocalTileIndex());
-                    }
                 }
             }
 
@@ -611,9 +554,6 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
                     const auto getPosition = GetParticlePosition<PIdx>(pti);
                     auto &ptile_buffer = species_buffer.DefineAndReturnParticleTile(lev, pti.index(),
                                                                                     pti.LocalTileIndex());
-                    auto* ptile_device = stage_through_device
-                        ? &device_buffer.ParticlesAt(lev, pti.index(), pti.LocalTileIndex())
-                        : nullptr;
                     const auto &ptile = plevel.at(index);
                     auto np = ptile.numParticles();
                     if (np == 0) { continue; }
@@ -651,7 +591,6 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
                           // the resize below will not shrink the capacity
                         if (new_np > capacity) { ptile_buffer.reserve(2*new_np); }
                         ptile_buffer.resize(new_np);
-                        if (stage_through_device) { ptile_device->resize(np_to_add); }
                     }
                     auto &warpx = WarpX::GetInstance();
                     const auto dt = warpx.getdt(pti.GetLevel());
@@ -664,18 +603,12 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
 
                     {
                         ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::filterTransformEB");
-                        auto transform = FindEmbeddedBoundaryIntersection{
-                            step_scraped_index, delta_index, time_scraped_index, normal_index,
-                            step, cur_time, dt, phiarr, dxi, plo, pc.getMass()};
-                        if (stage_through_device) {
-                            auto const copied = amrex::filterAndTransformParticles(
-                                *ptile_device, ptile, predicate, transform, 0, 0);
-                            copyParticlesDeviceToHost(
-                                ptile_buffer, *ptile_device, dst_index, copied);
-                        } else {
-                            amrex::filterAndTransformParticles(
-                                ptile_buffer, ptile, predicate, transform, 0, dst_index);
-                        }
+                        amrex::filterAndTransformParticles(ptile_buffer, ptile, predicate,
+                                                           FindEmbeddedBoundaryIntersection{step_scraped_index, delta_index,
+                                                                                            time_scraped_index, normal_index,
+                                                                                            step, cur_time, dt, phiarr, dxi, plo,
+                                                                                            pc.getMass()},
+                                                           0, dst_index);
 
                     }
                 }

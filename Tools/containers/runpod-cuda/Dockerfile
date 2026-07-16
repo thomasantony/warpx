@@ -68,11 +68,7 @@ RUN git clone --depth 1 https://github.com/icl-utk-edu/blaspp.git /tmp/blaspp &&
 WORKDIR /src/warpx
 COPY . /src/warpx
 
-RUN mkdir -p /opt/warpx/bin && \
-    nvcc -O2 -std=c++17 \
-        /src/warpx/Tools/containers/runpod-cuda/pinned_memory_probe.cu \
-        -o /opt/warpx/bin/amrex-pinned-memory-probe && \
-    cmake \
+RUN cmake \
         -S /src/warpx \
         -B /tmp/warpx-build \
         -DBUILD_SHARED_LIBS=ON \

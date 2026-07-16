@@ -68,33 +68,17 @@ RunPod caveats:
 - The MPI in this image is intended for single-container runs. Multi-node cloud
   MPI needs provider-specific networking and launch configuration.
 
-## GPU reduction compatibility
+## GPU mapped-memory compatibility
 
-The image includes an AMReX reduction fallback for GPU container runtimes that
-do not support device access to mapped pinned host memory. At startup, AMReX
-runs a small CUDA helper process that maps a pinned host allocation, writes to
-it from a kernel, and verifies the result. The fallback is enabled automatically
-when that isolated probe fails. A failed probe cannot poison WarpX's CUDA
-context.
-
-The automatic probe can be overridden for runtimes with context-dependent
-mapped-memory behavior:
+Some GPU container runtimes do not support device access to mapped pinned host
+memory. Enable the managed-memory fallback for AMReX's pinned arena with:
 
 ```text
 amrex.reduce_use_device_result = 1
 ```
 
-This forces the explicit device-result and host-copy paths without disabling
-GPU execution for the simulation. It also backs AMReX's pinned arena with CUDA
-managed memory. This preserves host access while making every pinned-arena
-allocation device-accessible, including paths that do not use AMReX's standard
-reduction and scan helpers.
-
-This makes GPU reduction and scan result scalars write to device memory first,
-then copy to the host, instead of writing directly to mapped host memory. It
-also computes `ParticleLocator` box bounds on the host, avoids direct
-mapped-host writes when obtaining device function pointers, and covers other
-device captures of pinned-arena storage globally.
+This preserves host access while making every pinned-arena allocation
+device-accessible, without disabling GPU execution for the simulation.
 
 ## Optional S3/R2 Uploads
 
