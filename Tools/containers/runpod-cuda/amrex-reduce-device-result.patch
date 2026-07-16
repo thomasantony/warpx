@@ -1,3 +1,31 @@
+diff --git a/Src/Base/AMReX_Arena.cpp b/Src/Base/AMReX_Arena.cpp
+index f7ecab4ab..0f9032a66 100644
+--- a/Src/Base/AMReX_Arena.cpp
++++ b/Src/Base/AMReX_Arena.cpp
+@@ -446,2 +446,4 @@ Arena::Initialize (bool minimal)
+     ParmParse pp("amrex");
++    bool use_managed_pinned_arena = false;
++    pp.queryAdd("reduce_use_device_result", use_managed_pinned_arena);
+     pp.queryAdd(        "the_arena_init_size",         the_arena_init_size);
+@@ -529,7 +531,15 @@ Arena::Initialize (bool minimal)
+-    // When USE_CUDA=FALSE, we call mlock to pin the cpu memory.
+-    // When USE_CUDA=TRUE, we call cudaHostAlloc to pin the host memory.
++    // Normally, use mlock on CPU and cudaHostAlloc on GPU.  Some GPU container
++    // runtimes cannot map cudaHostAlloc memory into the device address space.
++    // Managed memory preserves host access for all pinned-arena users while
++    // making device captures safe in those runtimes.
+     {
+         ArenaInfo ai{};
++#ifdef AMREX_USE_GPU
++        if (!use_managed_pinned_arena) {
++            ai.SetHostAlloc();
++        }
++#else
+         ai.SetHostAlloc();
++#endif
+         ai.SetReleaseThreshold(the_pinned_arena_release_threshold);
+         ai.SetDefragmentation(the_pinned_arena_defragmentation);
+         the_pinned_arena = new CArena(0, ai);
 diff --git a/Src/Base/AMReX_GpuDevice.H b/Src/Base/AMReX_GpuDevice.H
 index 81ca11eaf..350c2513f 100644
 --- a/Src/Base/AMReX_GpuDevice.H

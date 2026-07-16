@@ -85,12 +85,16 @@ amrex.reduce_use_device_result = 1
 ```
 
 This forces the explicit device-result and host-copy paths without disabling
-GPU execution for the simulation.
+GPU execution for the simulation. It also backs AMReX's pinned arena with CUDA
+managed memory. This preserves host access while making every pinned-arena
+allocation device-accessible, including paths that do not use AMReX's standard
+reduction and scan helpers.
 
 This makes GPU reduction and scan result scalars write to device memory first,
 then copy to the host, instead of writing directly to mapped host memory. It
-also computes `ParticleLocator` box bounds on the host and avoids direct
-mapped-host writes when obtaining device function pointers.
+also computes `ParticleLocator` box bounds on the host, avoids direct
+mapped-host writes when obtaining device function pointers, and covers other
+device captures of pinned-arena storage globally.
 
 ## Optional S3/R2 Uploads
 
