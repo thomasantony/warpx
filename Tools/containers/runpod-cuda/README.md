@@ -77,6 +77,16 @@ it from a kernel, and verifies the result. The fallback is enabled automatically
 when that isolated probe fails. A failed probe cannot poison WarpX's CUDA
 context.
 
+The automatic probe can be overridden for runtimes with context-dependent
+mapped-memory behavior:
+
+```text
+amrex.reduce_use_device_result = 1
+```
+
+This forces the explicit device-result and host-copy paths without disabling
+GPU execution for the simulation.
+
 This makes GPU reduction and scan result scalars write to device memory first,
 then copy to the host, instead of writing directly to mapped host memory. It
 also computes `ParticleLocator` box bounds on the host and avoids direct

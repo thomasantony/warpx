@@ -21,13 +21,17 @@ index d6f3e3fe1..a4c7750da 100644
 @@ -14,1 +14,2 @@
 +#include <cstdlib>
  #include <iostream>
-@@ -694,6 +695,23 @@ Device::deviceId () noexcept
+@@ -694,6 +695,27 @@ Device::deviceId () noexcept
      return device_id;
  }
  
 +bool
 +Device::canAccessPinnedHostMemory () noexcept
 +{
++    bool force_device_result = false;
++    ParmParse("amrex").query("reduce_use_device_result", force_device_result);
++    if (force_device_result) { return false; }
++
 +#if defined(AMREX_USE_CUDA)
 +    static bool can_access = false;
 +    static std::once_flag flag;
