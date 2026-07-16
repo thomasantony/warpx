@@ -15,10 +15,13 @@ index 81ca11eaf..350c2513f 100644
      static int numDevicePartners () noexcept; // Number of partners sharing my device
  
 diff --git a/Src/Base/AMReX_GpuDevice.cpp b/Src/Base/AMReX_GpuDevice.cpp
-index d6f3e3fe1..95e59c3ba 100644
+index d6f3e3fe1..a4c7750da 100644
 --- a/Src/Base/AMReX_GpuDevice.cpp
 +++ b/Src/Base/AMReX_GpuDevice.cpp
-@@ -694,6 +694,34 @@ Device::deviceId () noexcept
+@@ -14,1 +14,2 @@
++#include <cstdlib>
+ #include <iostream>
+@@ -694,6 +695,18 @@ Device::deviceId () noexcept
      return device_id;
  }
  
@@ -29,20 +32,9 @@ index d6f3e3fe1..95e59c3ba 100644
 +    static bool can_access = false;
 +    static std::once_flag flag;
 +    std::call_once(flag, [] () {
-+        int can_map = 0;
-+        if (cudaDeviceGetAttribute(&can_map, cudaDevAttrCanMapHostMemory,
-+                                   Device::deviceId()) != cudaSuccess || !can_map) {
-+            return;
-+        }
-+
-+        void* host_ptr = nullptr;
-+        if (cudaHostAlloc(&host_ptr, sizeof(void*), cudaHostAllocMapped) != cudaSuccess) {
-+            return;
-+        }
-+
-+        void* device_ptr = nullptr;
-+        can_access = cudaHostGetDevicePointer(&device_ptr, host_ptr, 0) == cudaSuccess;
-+        cudaFreeHost(host_ptr);
++        std::string const command = "/opt/warpx/bin/amrex-pinned-memory-probe " +
++                                    std::to_string(Device::deviceId());
++        can_access = std::system(command.c_str()) == 0;
 +    });
 +    return can_access;
 +#else

@@ -72,9 +72,10 @@ RunPod caveats:
 
 The image includes an AMReX reduction fallback for GPU container runtimes that
 do not support device access to mapped pinned host memory. At startup, AMReX
-probes the selected CUDA device with `cudaHostAllocMapped` and
-`cudaHostGetDevicePointer`. The fallback is enabled automatically when that
-probe fails.
+runs a small CUDA helper process that maps a pinned host allocation, writes to
+it from a kernel, and verifies the result. The fallback is enabled automatically
+when that isolated probe fails. A failed probe cannot poison WarpX's CUDA
+context.
 
 This makes GPU reduction and scan result scalars write to device memory first,
 then copy to the host, instead of writing directly to mapped host memory. It
