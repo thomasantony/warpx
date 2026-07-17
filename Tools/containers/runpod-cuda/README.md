@@ -71,14 +71,16 @@ RunPod caveats:
 ## GPU mapped-memory compatibility
 
 Some GPU container runtimes do not support device access to mapped pinned host
-memory. Enable the managed-memory fallback for AMReX's pinned arena with:
+memory. Enable explicit device staging for the affected AMReX operations with:
 
 ```text
 amrex.reduce_use_device_result = 1
 ```
 
-This preserves host access while making every pinned-arena allocation
-device-accessible, without disabling GPU execution for the simulation.
+This keeps pinned allocations host-only. GPU kernels write temporary device
+storage, and AMReX explicitly copies each result back to its pinned host
+destination. The setting does not change the main AMReX arena or require CUDA
+managed-memory support.
 
 ## Optional S3/R2 Uploads
 
