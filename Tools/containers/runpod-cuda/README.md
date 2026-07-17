@@ -71,16 +71,19 @@ RunPod caveats:
 ## GPU mapped-memory compatibility
 
 Some GPU container runtimes do not support device access to mapped pinned host
-memory. Enable explicit device staging for the affected AMReX operations with:
+memory. Enable the AMReX compatibility mode with:
 
 ```text
 amrex.reduce_use_device_result = 1
 ```
 
-This keeps pinned allocations host-only. GPU kernels write temporary device
-storage, and AMReX explicitly copies each result back to its pinned host
-destination. The setting does not change the main AMReX arena or require CUDA
-managed-memory support.
+This changes only AMReX's pinned host arena to use CUDA managed allocations, so
+all existing GPU-visible host-result buffers remain accessible without patching
+every caller. It does not change the large main AMReX device arena. Final
+`ReduceOps` tuples are reduced on the CPU in this mode, and the existing
+particle-copy staging remains enabled for paths that use separate host buffers.
+When GPU-aware MPI is disabled, AMReX retains a separate genuinely pinned host
+arena for MPI communication staging.
 
 ## Optional S3/R2 Uploads
 
