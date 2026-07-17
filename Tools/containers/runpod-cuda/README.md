@@ -77,13 +77,10 @@ memory. Enable the AMReX compatibility mode with:
 amrex.reduce_use_device_result = 1
 ```
 
-This changes only AMReX's pinned host arena to use CUDA managed allocations, so
-all existing GPU-visible host-result buffers remain accessible without patching
-every caller. It does not change the large main AMReX device arena. Final
-`ReduceOps` tuples are reduced on the CPU in this mode, and the existing
-particle-copy staging remains enabled for paths that use separate host buffers.
-When GPU-aware MPI is disabled, AMReX retains a separate genuinely pinned host
-arena for MPI communication staging.
+Final `ReduceOps` tuples are copied to ordinary host storage and reduced on the
+CPU in this mode. Other affected AMReX primitives use explicit device staging
+and host copies. The setting does not change the main, managed, pinned, or MPI
+communication arenas.
 
 ## Optional S3/R2 Uploads
 
