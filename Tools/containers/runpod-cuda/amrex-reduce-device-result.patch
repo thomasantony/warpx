@@ -370,3 +370,64 @@ index ba6adc4f6..03f6e6209 100644
              }
          }
      }
+diff --git a/Src/Base/AMReX_VisMF.cpp b/Src/Base/AMReX_VisMF.cpp
+index 1f6752cd3..051a90686 100644
+--- a/Src/Base/AMReX_VisMF.cpp
++++ b/Src/Base/AMReX_VisMF.cpp
+@@ -1541,8 +1541,17 @@ VisMF::readFAB (FabArray<FArrayBox> &mf,
+ #ifdef AMREX_USE_GPU
+       if (hostfab) {
+           if (fab.arena()->isManaged() || fab.arena()->isDevice()) {
+-              fab.template copy<RunOn::Device>(*hostfab);
+-              Gpu::streamSynchronize();
++              if (Gpu::Device::useDeviceForHostResults()) {
++                  FArrayBox devicefab(hostfab->box(), hostfab->nComp(),
++                                      The_Device_Arena());
++                  Gpu::htod_memcpy_async(devicefab.dataPtr(), hostfab->dataPtr(),
++                                         hostfab->nBytes());
++                  fab.template copy<RunOn::Device>(devicefab);
++                  Gpu::streamSynchronize();
++              } else {
++                  fab.template copy<RunOn::Device>(*hostfab);
++                  Gpu::streamSynchronize();
++              }
+           } else {
+               fab.template copy<RunOn::Host>(*hostfab);
+           }
+@@ -1560,8 +1569,17 @@ VisMF::readFAB (FabArray<FArrayBox> &mf,
+             if (fab.arena()->isManaged() || fab.arena()->isDevice()) {
+                 hostfab = std::make_unique<FArrayBox>(box, fab.nComp(), The_Pinned_Arena());
+                 hostfab->readFrom(*infs);
+-                fab.template copy<RunOn::Device>(*hostfab);
+-                Gpu::streamSynchronize();
++                if (Gpu::Device::useDeviceForHostResults()) {
++                    FArrayBox devicefab(hostfab->box(), hostfab->nComp(),
++                                        The_Device_Arena());
++                    Gpu::htod_memcpy_async(devicefab.dataPtr(), hostfab->dataPtr(),
++                                           hostfab->nBytes());
++                    fab.template copy<RunOn::Device>(devicefab);
++                    Gpu::streamSynchronize();
++                } else {
++                    fab.template copy<RunOn::Device>(*hostfab);
++                    Gpu::streamSynchronize();
++                }
+             } else
+ #endif
+             {
+@@ -2451,7 +2469,15 @@ VisMF::AsyncWriteDoit (const FabArray<FArrayBox>& mf, const std::string& mf_name
+             myfabs->emplace_back(bx, mf.nComp(), The_Pinned_Arena());
+             auto& new_fab = myfabs->back();
+             if (strip_ghost) {
+-                new_fab.copy<RunOn::Device>(mf[mfi], bx);
++                if (Gpu::Device::useDeviceForHostResults()) {
++                    FArrayBox devicefab(bx, mf.nComp(), The_Device_Arena());
++                    devicefab.copy<RunOn::Device>(mf[mfi], bx);
++                    Gpu::dtoh_memcpy_async(new_fab.dataPtr(), devicefab.dataPtr(),
++                                           new_fab.nBytes());
++                    Gpu::streamSynchronize();
++                } else {
++                    new_fab.copy<RunOn::Device>(mf[mfi], bx);
++                }
+             } else {
+                 Gpu::dtoh_memcpy_async(new_fab.dataPtr(), mf[mfi].dataPtr(), new_fab.size()*sizeof(Real));
+             }
