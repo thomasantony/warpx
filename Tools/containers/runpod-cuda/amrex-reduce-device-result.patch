@@ -67,7 +67,7 @@ index 3a808f429..2e11fb09a 100644
              Gpu::dtoh_memcpy_async(hp, dtmp.data(), sizeof(ReduceTuple));
  #endif
  #else
-+            Gpu::DeviceVector<ReduceTuple> dtmp;
++            Gpu::NonManagedDeviceVector<ReduceTuple> dtmp;
 +            auto presult = hp;
 +            if (Gpu::Device::useDeviceForHostResults()) {
 +                dtmp.resize(1);
@@ -361,4 +361,3 @@ index ba6adc4f6..03f6e6209 100644
              }
          }
      }
-
