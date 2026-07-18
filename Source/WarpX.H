@@ -840,6 +840,7 @@ public:
      * \param[in] patch_type PatchType on which the field is initialized (fine or coarse)
      * \param[in] eb_update_field flag indicating which gridpoints should be modified by this functions
      * \param[in] use_eb_flags (default:true) flag indicating if eb points should be excluded or not
+     * \param[in] parser_time optional time to pass to parser functions (default: t_new)
      */
     void ComputeExternalFieldOnGridUsingParser (
         const std::variant<warpx::fields::FieldType, std::string>& field,
@@ -848,7 +849,43 @@ public:
         amrex::ParserExecutor<4> const& fz_parser,
         int lev, PatchType patch_type,
         amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
-        bool use_eb_flags = true);
+        bool use_eb_flags = true,
+        std::optional<amrex::Real> parser_time = std::nullopt);
+
+    /**
+     * \brief Add a parser-defined vector field to an existing grid field.
+     *
+     * This is used for externally driven source currents in full EM simulations.
+     */
+    void AddExternalFieldOnGridUsingParser (
+        const std::variant<warpx::fields::FieldType, std::string>& field,
+        amrex::ParserExecutor<4> const& fx_parser,
+        amrex::ParserExecutor<4> const& fy_parser,
+        amrex::ParserExecutor<4> const& fz_parser,
+        int lev, PatchType patch_type,
+        amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
+        bool use_eb_flags = true,
+        std::optional<amrex::Real> parser_time = std::nullopt);
+
+    /** Add the user-defined external grid current to current_fp/current_cp. */
+    void AddExternalCurrentOnGrid ();
+
+    /**
+     * \brief Add the curl of the user-defined external magnetization, M_ext, to
+     * current_fp/current_cp as J_ext = curl(M_ext).
+     *
+     * M_ext is filled on B-staggering (via Mx/My/Mz_external_grid_function) and
+     * its curl is taken with a Yee finite-difference stencil directly onto the
+     * current (E-type) staggering, at t^{n+1/2}. Because this is the same discrete
+     * curl operator used elsewhere to advance E from B, the resulting J_ext is
+     * discretely divergence-free (div(curl) == 0 to machine precision), unlike a
+     * directly parsed J_ext. This is the preferred way to specify closed-loop
+     * external current sources (e.g. RMF antenna coils); direct
+     * Jx/Jy/Jz_external_grid_function remains supported for legacy/general use.
+     *
+     * Currently only implemented for 3D Cartesian.
+     */
+    void AddExternalCurrentFromMOnGrid ();
 
     /**
      * \brief Load field values from a user-specified openPMD file,

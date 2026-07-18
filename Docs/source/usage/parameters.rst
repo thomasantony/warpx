@@ -2514,6 +2514,42 @@ are applied to the grid directly. In particular, these fields can be seen in the
     ``read_from_file``, the openPMD file specified by ``warpx.read_fields_from_path``
     should contain both B and E external fields data.
 
+.. pp:param:: warpx.J[x/y/z]_external_grid_function(x,y,z,t)
+    :type: string
+    :optional:
+
+    This parameter defines an externally applied current density on the grid, in
+    :math:`\mathrm{A}/\mathrm{m}^2`, for electromagnetic simulations. The
+    parser expression is evaluated on the Yee-grid locations of the corresponding
+    current component and added to the synchronized particle/fluid current before
+    the field solve. Constants required in the expression can be set using
+    ``my_constants``. For example,
+    ``warpx.Jz_external_grid_function(x,y,z,t) = "J0*sin(omega*t)"`` can use
+    ``my_constants.J0`` and ``my_constants.omega`` from the input file.
+
+    This is a time-dependent source term for Maxwell's equations, unlike
+    :pp:param:`warpx.E_ext_grid_init_style` and
+    :pp:param:`warpx.B_ext_grid_init_style`, which initialize grid fields. The
+    current parser is not implemented for RZ geometry.
+
+.. pp:param:: warpx.M[x/y/z]_external_grid_function(x,y,z,t)
+    :type: string
+    :optional:
+
+    This parameter defines an externally applied magnetization field, in
+    :math:`\mathrm{A}/\mathrm{m}`, whose discrete curl is added to the grid
+    current as :math:`\boldsymbol{J}_{\mathrm{ext}} = \nabla \times
+    \boldsymbol{M}_{\mathrm{ext}}`. The parser expression is evaluated on the
+    Yee-grid locations of the corresponding magnetic-field component at the
+    current half time step. Constants required in the expression can be set
+    using ``my_constants``.
+
+    This form is useful for time-dependent closed-loop current sources because
+    the Yee-grid curl is discretely divergence-free. It can be combined with
+    :pp:param:`warpx.J[x/y/z]_external_grid_function(x,y,z,t)`; both sources are
+    additive. This parameter is currently implemented only for three-dimensional
+    Cartesian geometry.
+
 .. pp:param:: warpx.E/B_external_grid
     :link_aliases:
         warpx.E_external_grid
