@@ -1,0 +1,40 @@
+warpx.serialize_initial_conditions = 1
+warpx.do_dynamic_scheduling = 0
+warpx.verbose = 0
+
+max_step = 2
+geometry.dims = 3
+geometry.prob_lo = -4.0 -4.0 -4.0
+geometry.prob_hi =  4.0  4.0  4.0
+geometry.is_periodic = 0 0 0
+amr.n_cell = 8 8 8
+amr.max_grid_size = 4
+amr.blocking_factor = 4
+amr.max_level = 0
+
+boundary.field_lo = pec pec pec
+boundary.field_hi = pec pec pec
+boundary.particle_lo = absorbing absorbing absorbing
+boundary.particle_hi = absorbing absorbing absorbing
+
+my_constants.A_coil = 1.0
+my_constants.R_coil = 2.0
+my_constants.w_coil = 0.8
+my_constants.omega_rmf = 5.0e8*pi
+my_constants.t_ramp = 2.0e-9
+
+warpx.const_dt = 1.0e-9
+warpx.use_filter = 0
+algo.maxwell_solver = Yee
+
+# Two perpendicular smooth current loops produce a rotating magnetic field.
+# A raised-cosine ramp matches the RMF setup used in the SolarWindRMF examples.
+warpx.My_external_grid_function(x,y,z,t) = "if(t<t_ramp,0.5*(1.0-cos(pi*t/t_ramp)),1.0)*A_coil*exp(-y*y/(2.0*w_coil*w_coil))*0.5*(1.0-tanh((sqrt(x*x+z*z)-R_coil)/w_coil))*cos(omega_rmf*t)"
+warpx.Mz_external_grid_function(x,y,z,t) = "if(t<t_ramp,0.5*(1.0-cos(pi*t/t_ramp)),1.0)*A_coil*exp(-z*z/(2.0*w_coil*w_coil))*0.5*(1.0-tanh((sqrt(x*x+y*y)-R_coil)/w_coil))*sin(omega_rmf*t)"
+
+diagnostics.diags_names = diag
+diag.intervals = 1
+diag.diag_type = Full
+diag.format = plotfile
+diag.fields_to_plot = jx jy jz
+diag.plot_raw_fields = 1

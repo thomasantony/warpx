@@ -850,6 +850,26 @@ public:
         amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
         bool use_eb_flags = true);
 
+    /** Add the user-defined external grid current to current_fp/current_cp. */
+    void AddExternalCurrentOnGrid ();
+
+    /**
+     * \brief Add the curl of the user-defined external magnetization, M_ext, to
+     * current_fp/current_cp as J_ext = curl(M_ext).
+     *
+     * M_ext is filled on B-staggering (via Mx/My/Mz_external_grid_function) and
+     * its curl is taken with a Yee finite-difference stencil directly onto the
+     * current (E-type) staggering, at t^{n+1/2}. It uses the Cartesian Yee
+     * derivative primitives, so the resulting J_ext is discretely divergence-free
+     * to floating-point precision, unlike a directly parsed J_ext. This is the
+     * preferred way to specify closed-loop external current sources (e.g. RMF
+     * antenna coils); direct
+     * Jx/Jy/Jz_external_grid_function remains supported for legacy/general use.
+     *
+     * Currently only implemented for the 3D Cartesian Yee solver on a staggered grid.
+     */
+    void AddExternalCurrentFromMOnGrid ();
+
     /**
      * \brief Load field values from a user-specified openPMD file,
      * for the fields Ex, Ey, Ez, Bx, By, Bz
