@@ -835,6 +835,13 @@ void WarpX::SyncCurrentAndRho ()
             m_fields.get(FieldType::current_fp, Direction{1}, lev),
             m_fields.get(FieldType::current_fp, Direction{2}, lev),
             PatchType::fine);
+        if (m_fields.has_vector(FieldType::current_fp_external, lev)) {
+            ApplyJfieldBoundary(lev,
+                m_fields.get(FieldType::current_fp_external, Direction{0}, lev),
+                m_fields.get(FieldType::current_fp_external, Direction{1}, lev),
+                m_fields.get(FieldType::current_fp_external, Direction{2}, lev),
+                PatchType::fine);
+        }
         if (lev > 0) {
             if (m_fields.has(FieldType::rho_cp, lev)) {
                 ApplyRhofieldBoundary(lev, m_fields.get(FieldType::rho_cp,lev), PatchType::coarse);
@@ -844,6 +851,13 @@ void WarpX::SyncCurrentAndRho ()
                 m_fields.get(FieldType::current_cp, Direction{1}, lev),
                 m_fields.get(FieldType::current_cp, Direction{2}, lev),
                 PatchType::coarse);
+            if (m_fields.has_vector(FieldType::current_cp_external, lev)) {
+                ApplyJfieldBoundary(lev,
+                    m_fields.get(FieldType::current_cp_external, Direction{0}, lev),
+                    m_fields.get(FieldType::current_cp_external, Direction{1}, lev),
+                    m_fields.get(FieldType::current_cp_external, Direction{2}, lev),
+                    PatchType::coarse);
+            }
         }
     }
 }

@@ -629,6 +629,17 @@ FlushFormatPlotfile::WriteAllRawFields(
                     default_level_prefix, "jy_fp", lev,plot_raw_fields_guards );
         WriteRawMF( *warpx.m_fields.get(FieldType::current_fp,Direction{2}, lev), dm, raw_pltname,
                     default_level_prefix, "jz_fp", lev,plot_raw_fields_guards );
+        if (warpx.m_fields.has_vector(FieldType::current_fp_external, lev)) {
+            WriteRawMF(
+                *warpx.m_fields.get(FieldType::current_fp_external, Direction{0}, lev), dm,
+                raw_pltname, default_level_prefix, "jx_fp_external", lev, plot_raw_fields_guards);
+            WriteRawMF(
+                *warpx.m_fields.get(FieldType::current_fp_external, Direction{1}, lev), dm,
+                raw_pltname, default_level_prefix, "jy_fp_external", lev, plot_raw_fields_guards);
+            WriteRawMF(
+                *warpx.m_fields.get(FieldType::current_fp_external, Direction{2}, lev), dm,
+                raw_pltname, default_level_prefix, "jz_fp_external", lev, plot_raw_fields_guards);
+        }
         WriteRawMF( *warpx.m_fields.get(FieldType::Bfield_fp, Direction{0}, lev), dm, raw_pltname,
                     default_level_prefix, "Bx_fp", lev, plot_raw_fields_guards );
         WriteRawMF( *warpx.m_fields.get(FieldType::Bfield_fp, Direction{1}, lev), dm, raw_pltname,

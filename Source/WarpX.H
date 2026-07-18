@@ -866,7 +866,9 @@ public:
      * antenna coils); direct
      * Jx/Jy/Jz_external_grid_function remains supported for legacy/general use.
      *
-     * Currently only implemented for the 3D Cartesian Yee solver on a staggered grid.
+     * The parser-defined form is implemented for the 3D Cartesian Yee solver.
+     * In RZ, warpx.rmf_source=rotating_magnetization_rz constructs a regular pure-m=1
+     * magnetization and applies the cylindrical Yee curl with its on-axis regularization.
      */
     void AddExternalCurrentFromMOnGrid ();
 

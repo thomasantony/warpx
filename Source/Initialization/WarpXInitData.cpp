@@ -22,7 +22,11 @@
 #endif
 #include "Fields.H"
 #include "FieldSolver/ElectrostaticSolvers/ElectrostaticSolver.H"
+#ifdef WARPX_DIM_RZ
+#include "FieldSolver/FiniteDifferenceSolver/FiniteDifferenceAlgorithms/CylindricalYeeAlgorithm.H"
+#else
 #include "FieldSolver/FiniteDifferenceSolver/FiniteDifferenceAlgorithms/CartesianYeeAlgorithm.H"
+#endif
 #include "FieldSolver/FiniteDifferenceSolver/HybridPICModel/HybridPICModel.H"
 #include "FieldSolver/FiniteDifferenceSolver/MacroscopicProperties/MacroscopicProperties.H"
 #include "FieldSolver/ImplicitSolvers/ImplicitSolver.H"
@@ -79,6 +83,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -1583,7 +1588,7 @@ void WarpX::ComputeExternalFieldOnGridUsingParser (
 }
 
 namespace {
-void AddExternalFieldOnGridUsingParser (
+void SetExternalFieldOnGridUsingParser (
     warpx::fields::FieldType field,
     amrex::ParserExecutor<4> const& fx_parser,
     amrex::ParserExecutor<4> const& fy_parser,
@@ -1594,14 +1599,15 @@ void AddExternalFieldOnGridUsingParser (
 {
     ComputeExternalFieldOnGridUsingParser_template<warpx::fields::FieldType> (
         field, fx_parser, fy_parser, fz_parser, lev, patch_type,
-        eb_update_field, true, true, parser_time);
+        eb_update_field, true, false, parser_time);
 }
 }
 
 void WarpX::AddExternalCurrentOnGrid ()
 {
     if (!m_p_ext_field_params->has_J_external_grid &&
-        !m_p_ext_field_params->has_M_external_grid) {
+        !m_p_ext_field_params->has_M_external_grid &&
+        !m_p_ext_field_params->has_rmf_source) {
         return;
     }
 
@@ -1619,6 +1625,17 @@ void WarpX::AddExternalCurrentOnGrid ()
         }
     }
 
+    using ablastr::fields::Direction;
+    using warpx::fields::FieldType;
+    for (int lev = 0; lev <= finest_level; ++lev) {
+        for (int idim = 0; idim < 3; ++idim) {
+            m_fields.get(FieldType::current_fp_external, Direction{idim}, lev)->setVal(0.0_rt);
+            if (lev > 0) {
+                m_fields.get(FieldType::current_cp_external, Direction{idim}, lev)->setVal(0.0_rt);
+            }
+        }
+    }
+
     if (m_p_ext_field_params->has_J_external_grid) {
         auto const Jx_parser = m_p_ext_field_params->Jxfield_parser->compile<4>();
         auto const Jy_parser = m_p_ext_field_params->Jyfield_parser->compile<4>();
@@ -1626,14 +1643,14 @@ void WarpX::AddExternalCurrentOnGrid ()
 
         for (int lev = 0; lev <= finest_level; ++lev) {
             amrex::Real const current_time = gett_new(lev) + 0.5_rt * getdt(lev);
-            AddExternalFieldOnGridUsingParser(
-                warpx::fields::FieldType::current_fp,
+            SetExternalFieldOnGridUsingParser(
+                FieldType::current_fp_external,
                 Jx_parser, Jy_parser, Jz_parser,
                 lev, PatchType::fine, m_eb_update_E, current_time);
 
             if (lev > 0) {
-                AddExternalFieldOnGridUsingParser(
-                    warpx::fields::FieldType::current_cp,
+                SetExternalFieldOnGridUsingParser(
+                    FieldType::current_cp_external,
                     Jx_parser, Jy_parser, Jz_parser,
                     lev, PatchType::coarse, m_eb_update_E, current_time);
             }
@@ -1643,26 +1660,47 @@ void WarpX::AddExternalCurrentOnGrid ()
     // Additive, structural source term: J_ext = curl(M_ext). Independent of the
     // direct Jx/Jy/Jz_external_grid_function path above.
     AddExternalCurrentFromMOnGrid();
+
+    for (int lev = 0; lev <= finest_level; ++lev) {
+        for (int idim = 0; idim < 3; ++idim) {
+            amrex::MultiFab* total = m_fields.get(FieldType::current_fp, Direction{idim}, lev);
+            amrex::MultiFab const* external =
+                m_fields.get(FieldType::current_fp_external, Direction{idim}, lev);
+            amrex::MultiFab::Add(
+                *total, *external, 0, 0, total->nComp(), total->nGrowVect());
+            if (lev > 0) {
+                amrex::MultiFab* coarse_total =
+                    m_fields.get(FieldType::current_cp, Direction{idim}, lev);
+                amrex::MultiFab const* coarse_external =
+                    m_fields.get(FieldType::current_cp_external, Direction{idim}, lev);
+                amrex::MultiFab::Add(*coarse_total, *coarse_external, 0, 0,
+                    coarse_total->nComp(), coarse_total->nGrowVect());
+            }
+        }
+    }
 }
 
 namespace {
     /** Discrete Yee curl of a B-staggered vector field (Mx,My,Mz) onto the
-     *  current (E-type) staggering, added into (Jx,Jy,Jz):
+     *  current (E-type) staggering, added into (Jx,Jy,Jz). In 3D Cartesian:
      *
      *    Jx += dMz/dy - dMy/dz
      *    Jy += dMx/dz - dMz/dx
      *    Jz += dMy/dx - dMx/dy
      *
-     *  This uses the Cartesian Yee derivative primitives that advance E from B
-     *  in Ampere's law. The discrete divergence and curl use compatible
-     *  difference stencils, so div(curl(M)) vanishes to floating-point precision.
+     *  In RZ, the corresponding cylindrical modal curl is used. Both paths use
+     *  the same Yee derivative primitives that advance E from B in Ampere's law.
+     *  Thus, the compatible discrete divergence of curl(M) vanishes to
+     *  floating-point precision away from the RZ axis; higher modes of the
+     *  divergence are regularized to zero on axis by the field solver.
      */
     void AddCurlOfMToCurrent (
         amrex::MultiFab& Jx, amrex::MultiFab& Jy, amrex::MultiFab& Jz,
         amrex::MultiFab const& Mx, amrex::MultiFab const& My, amrex::MultiFab const& Mz,
-        amrex::GpuArray<amrex::Real,3> const& dx_lev)
+        std::array<amrex::Real,3> const& dx_lev, amrex::Real const rmin)
     {
 #if defined(WARPX_DIM_3D)
+        amrex::ignore_unused(rmin);
         amrex::GpuArray<amrex::Real, 1> const coefs_x{{1._rt/dx_lev[0]}};
         amrex::GpuArray<amrex::Real, 1> const coefs_y{{1._rt/dx_lev[1]}};
         amrex::GpuArray<amrex::Real, 1> const coefs_z{{1._rt/dx_lev[2]}};
@@ -1703,22 +1741,157 @@ namespace {
                 }
             );
         }
+#elif defined(WARPX_DIM_RZ)
+        amrex::GpuArray<amrex::Real, 1> const coefs_r{{1._rt/dx_lev[0]}};
+        amrex::GpuArray<amrex::Real, 1> const coefs_z{{1._rt/dx_lev[2]}};
+        amrex::Real const dr = dx_lev[0];
+        int const nmodes = (Jx.nComp() + 1) / 2;
+
+        for (MFIter mfi(Jx, TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            amrex::Box const& tbr = mfi.tilebox(Jx.ixType().toIntVect());
+            amrex::Box const& tbt = mfi.tilebox(Jy.ixType().toIntVect());
+            amrex::Box const& tbz = mfi.tilebox(Jz.ixType().toIntVect());
+
+            auto const& Jr = Jx.array(mfi);
+            auto const& Jtheta = Jy.array(mfi);
+            auto const& Jzfab = Jz.array(mfi);
+            auto const& Mr = Mx.const_array(mfi);
+            auto const& Mtheta = My.const_array(mfi);
+            auto const& Mzfab = Mz.const_array(mfi);
+
+            amrex::ParallelFor(tbr, tbt, tbz,
+                [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    amrex::Real const r = rmin + (i + 0.5_rt) * dr;
+                    Jr(i,j,k,0) += -CylindricalYeeAlgorithm::DownwardDz(
+                        Mtheta, coefs_z.data(), 1, i, j, k, 0);
+                    for (int m = 1; m < nmodes; ++m) {
+                        Jr(i,j,k,2*m-1) +=
+                            -CylindricalYeeAlgorithm::DownwardDz(
+                                Mtheta, coefs_z.data(), 1, i, j, k, 2*m-1)
+                            + m * Mzfab(i,j,k,2*m) / r;
+                        Jr(i,j,k,2*m) +=
+                            -CylindricalYeeAlgorithm::DownwardDz(
+                                Mtheta, coefs_z.data(), 1, i, j, k, 2*m)
+                            - m * Mzfab(i,j,k,2*m-1) / r;
+                    }
+                },
+                [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    Jtheta(i,j,k,0) +=
+                        -CylindricalYeeAlgorithm::DownwardDr(
+                            Mzfab, coefs_r.data(), 1, i, j, k, 0)
+                        + CylindricalYeeAlgorithm::DownwardDz(
+                            Mr, coefs_z.data(), 1, i, j, k, 0);
+                    for (int m = 1; m < nmodes; ++m) {
+                        Jtheta(i,j,k,2*m-1) +=
+                            -CylindricalYeeAlgorithm::DownwardDr(
+                                Mzfab, coefs_r.data(), 1, i, j, k, 2*m-1)
+                            + CylindricalYeeAlgorithm::DownwardDz(
+                                Mr, coefs_z.data(), 1, i, j, k, 2*m-1);
+                        Jtheta(i,j,k,2*m) +=
+                            -CylindricalYeeAlgorithm::DownwardDr(
+                                Mzfab, coefs_r.data(), 1, i, j, k, 2*m)
+                            + CylindricalYeeAlgorithm::DownwardDz(
+                                Mr, coefs_z.data(), 1, i, j, k, 2*m);
+                    }
+                },
+                [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    amrex::Real const r = rmin + i * dr;
+                    if (r != 0.0_rt) {
+                        Jzfab(i,j,k,0) += CylindricalYeeAlgorithm::DownwardDrr_over_r(
+                            Mtheta, r, dr, coefs_r.data(), 1, i, j, k, 0);
+                        for (int m = 1; m < nmodes; ++m) {
+                            Jzfab(i,j,k,2*m-1) +=
+                                -m * Mr(i,j,k,2*m) / r
+                                + CylindricalYeeAlgorithm::DownwardDrr_over_r(
+                                    Mtheta, r, dr, coefs_r.data(), 1, i, j, k, 2*m-1);
+                            Jzfab(i,j,k,2*m) +=
+                                m * Mr(i,j,k,2*m-1) / r
+                                + CylindricalYeeAlgorithm::DownwardDrr_over_r(
+                                    Mtheta, r, dr, coefs_r.data(), 1, i, j, k, 2*m);
+                        }
+                    } else {
+                        Jzfab(i,j,k,0) += 4.0_rt * Mtheta(i,j,k,0) / dr;
+                        for (int m = 1; m < nmodes; ++m) {
+                            Jzfab(i,j,k,2*m-1) = 0.0_rt;
+                            Jzfab(i,j,k,2*m) = 0.0_rt;
+                        }
+                    }
+                }
+            );
+        }
 #else
-        amrex::ignore_unused(Jx, Jy, Jz, Mx, My, Mz, dx_lev);
+        amrex::ignore_unused(Jx, Jy, Jz, Mx, My, Mz, dx_lev, rmin);
         WARPX_ABORT_WITH_MESSAGE(
-            "M_external_grid_function (curl(M) -> J_ext) is currently only implemented for 3D.");
+            "curl(M) external current is only implemented for 3D Cartesian and RZ.");
 #endif
     }
+
+#ifdef WARPX_DIM_RZ
+    void FillRZRMFMagnetization (
+        amrex::MultiFab& Mr, amrex::MultiFab& Mtheta, amrex::MultiFab& Mz,
+        amrex::Geometry const& geom, amrex::Real const time,
+        ExternalFieldParams const& params)
+    {
+        Mr.setVal(0.0_rt);
+        Mtheta.setVal(0.0_rt);
+        Mz.setVal(0.0_rt);
+
+        amrex::Real ramp = 1.0_rt;
+        if (time <= 0.0_rt) {
+            ramp = 0.0_rt;
+        } else if (params.rmf_ramp_time > 0.0_rt && time < params.rmf_ramp_time) {
+            ramp = 0.5_rt * (1.0_rt - std::cos(
+                MathConst::pi * time / params.rmf_ramp_time));
+        }
+        amrex::Real const phase = params.rmf_sense * 2.0_rt * MathConst::pi *
+            params.rmf_frequency * time;
+        amrex::Real const Mr_factor = params.rmf_M0 * ramp * std::cos(phase);
+        amrex::Real const Mr_imag_factor = params.rmf_M0 * ramp * std::sin(phase);
+        amrex::Real const Mt_factor = Mr_imag_factor;
+        amrex::Real const Mt_imag_factor = -Mr_factor;
+        amrex::Real const radius = params.rmf_radius;
+        amrex::Real const width = params.rmf_width;
+        auto const problo = geom.ProbLoArray();
+        auto const cell_size = geom.CellSizeArray();
+
+        auto const fill_transverse_component = [=] (
+            amrex::MultiFab& field, amrex::Real const real_factor,
+            amrex::Real const imag_factor)
+        {
+            bool const r_nodal = field.ixType().nodeCentered(0);
+            bool const z_nodal = field.ixType().nodeCentered(1);
+            for (amrex::MFIter mfi(field); mfi.isValid(); ++mfi) {
+                amrex::Box const& box = mfi.fabbox();
+                auto const& field_arr = field.array(mfi);
+                amrex::ParallelFor(box,
+                    [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                        amrex::Real const r = problo[0] +
+                            (i + (r_nodal ? 0.0_rt : 0.5_rt)) * cell_size[0];
+                        amrex::Real const z = problo[1] +
+                            (j + (z_nodal ? 0.0_rt : 0.5_rt)) * cell_size[1];
+                        amrex::Real const u = (r*r + z*z - radius*radius) /
+                            (2.0_rt * radius * width);
+                        amrex::Real const sigma = 0.5_rt * (1.0_rt - std::tanh(u));
+                        field_arr(i,j,k,1) = real_factor * sigma;
+                        field_arr(i,j,k,2) = imag_factor * sigma;
+                    });
+            }
+        };
+
+        fill_transverse_component(Mr, Mr_factor, Mr_imag_factor);
+        fill_transverse_component(Mtheta, Mt_factor, Mt_imag_factor);
+    }
+#endif
 }
 
 void WarpX::AddExternalCurrentFromMOnGrid ()
 {
-    if (!m_p_ext_field_params->has_M_external_grid) { return; }
+    if (!m_p_ext_field_params->has_M_external_grid &&
+        !m_p_ext_field_params->has_rmf_source) {
+        return;
+    }
 
-#if !defined(WARPX_DIM_3D)
-    WARPX_ABORT_WITH_MESSAGE(
-        "M_external_grid_function (curl(M) -> J_ext) is currently only implemented for 3D.");
-#else
+#if defined(WARPX_DIM_3D)
     using ablastr::fields::Direction;
 
     auto const Mx_parser = m_p_ext_field_params->Mxfield_parser->compile<4>();
@@ -1732,7 +1905,8 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
             warpx::fields::FieldType const b_field = (patch_type == PatchType::fine) ?
                 warpx::fields::FieldType::Bfield_fp : warpx::fields::FieldType::Bfield_cp;
             warpx::fields::FieldType const j_field = (patch_type == PatchType::fine) ?
-                warpx::fields::FieldType::current_fp : warpx::fields::FieldType::current_cp;
+                warpx::fields::FieldType::current_fp_external :
+                warpx::fields::FieldType::current_cp_external;
 
             amrex::MultiFab* Bx = m_fields.get(b_field, Direction{0}, lev);
             amrex::MultiFab* By = m_fields.get(b_field, Direction{1}, lev);
@@ -1757,16 +1931,16 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
                 &Mx, &My, &Mz, Mx_parser, My_parser, Mz_parser,
                 lev, patch_type, m_eb_update_E, false, false, current_time);
 
-            auto const &geom = Geom(lev);
-            auto dx_lev = geom.CellSizeArray();
+            auto const& geom = Geom(lev);
+            auto dx_lev = CellSize(lev);
             amrex::IntVect const refratio = (lev > 0) ? WarpX::RefRatio(lev-1) : amrex::IntVect(1);
             if (patch_type == PatchType::coarse) {
-                for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {
+                for (int idim = 0; idim < 3; ++idim) {
                     dx_lev[idim] = dx_lev[idim] * refratio[idim];
                 }
             }
 
-            AddCurlOfMToCurrent(*Jx, *Jy, *Jz, Mx, My, Mz, dx_lev);
+            AddCurlOfMToCurrent(*Jx, *Jy, *Jz, Mx, My, Mz, dx_lev, geom.ProbLo(0));
         };
 
         add_curl_m_on_patch(PatchType::fine);
@@ -1774,6 +1948,33 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
             add_curl_m_on_patch(PatchType::coarse);
         }
     }
+#elif defined(WARPX_DIM_RZ)
+    using ablastr::fields::Direction;
+    using warpx::fields::FieldType;
+
+    constexpr int lev = 0;
+    amrex::Real const current_time = gett_new(lev) + 0.5_rt * getdt(lev);
+    amrex::MultiFab* Br = m_fields.get(FieldType::Bfield_fp, Direction::r, lev);
+    amrex::MultiFab* Btheta = m_fields.get(FieldType::Bfield_fp, Direction::theta, lev);
+    amrex::MultiFab* Bz = m_fields.get(FieldType::Bfield_fp, Direction::z, lev);
+    amrex::MultiFab* Jr = m_fields.get(FieldType::current_fp_external, Direction::r, lev);
+    amrex::MultiFab* Jtheta =
+        m_fields.get(FieldType::current_fp_external, Direction::theta, lev);
+    amrex::MultiFab* Jz = m_fields.get(FieldType::current_fp_external, Direction::z, lev);
+
+    amrex::IntVect const ng(1);
+    amrex::MultiFab Mr(Br->boxArray(), Br->DistributionMap(), Br->nComp(), ng);
+    amrex::MultiFab Mtheta(
+        Btheta->boxArray(), Btheta->DistributionMap(), Btheta->nComp(), ng);
+    amrex::MultiFab Mz(Bz->boxArray(), Bz->DistributionMap(), Bz->nComp(), ng);
+
+    auto const& geom = Geom(lev);
+    FillRZRMFMagnetization(Mr, Mtheta, Mz, geom, current_time, *m_p_ext_field_params);
+    AddCurlOfMToCurrent(
+        *Jr, *Jtheta, *Jz, Mr, Mtheta, Mz, CellSize(lev), geom.ProbLo(0));
+#else
+    WARPX_ABORT_WITH_MESSAGE(
+        "curl(M) external current is only implemented for 3D Cartesian and RZ.");
 #endif
 }
 

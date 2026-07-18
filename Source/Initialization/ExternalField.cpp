@@ -8,8 +8,9 @@
 
 #include "ExternalField.H"
 
-#include "Utils/TextMsg.H"
 #include "Utils/Parser/ParserUtils.H"
+#include "Utils/TextMsg.H"
+#include "Utils/WarpXConst.H"
 
 #include <ablastr/warn_manager/WarnManager.H>
 
@@ -68,6 +69,8 @@ namespace
 
 ExternalFieldParams::ExternalFieldParams(const amrex::ParmParse& pp_warpx)
 {
+    using namespace amrex::literals;
+
     // default values of E_external_grid and B_external_grid
     // are used to set the E and B field when "constant" or
     // "parser" is not explicitly used in the input.
@@ -98,6 +101,60 @@ ExternalFieldParams::ExternalFieldParams(const amrex::ParmParse& pp_warpx)
         utils::parser::getArrWithParser(pp_warpx, "E_external_grid", v_E);
     }
     std::copy(v_E.begin(), v_E.end(), E_external_grid.begin());
+    //___________________________________________________________________________
+
+
+    //
+    //  Dedicated pure-m=1 rotating magnetization source for RZ
+    //
+    std::string rmf_source;
+    has_rmf_source = pp_warpx.query("rmf_source", rmf_source);
+    if (has_rmf_source) {
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            rmf_source == "rotating_magnetization_rz",
+            "warpx.rmf_source must be 'rotating_magnetization_rz'.");
+#ifndef WARPX_DIM_RZ
+        WARPX_ABORT_WITH_MESSAGE(
+            "warpx.rmf_source=rotating_magnetization_rz requires RZ geometry.");
+#endif
+
+        const amrex::ParmParse pp_rmf("rmf");
+        amrex::Real rmf_B0 = 0.0_rt;
+        bool const has_B0 = utils::parser::queryWithParser(pp_rmf, "B0", rmf_B0);
+        bool const has_M0 = utils::parser::queryWithParser(pp_rmf, "M0", rmf_M0);
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            has_B0 != has_M0,
+            "Specify exactly one of rmf.B0 or rmf.M0 for the RZ RMF source.");
+
+        utils::parser::getWithParser(pp_rmf, "radius", rmf_radius);
+        utils::parser::getWithParser(pp_rmf, "width", rmf_width);
+        utils::parser::getWithParser(pp_rmf, "frequency", rmf_frequency);
+        utils::parser::getWithParser(pp_rmf, "ramp_time", rmf_ramp_time);
+        utils::parser::getWithParser(pp_rmf, "sense", rmf_sense);
+
+        std::string calibration = "center_field";
+        pp_rmf.query("calibration", calibration);
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            calibration == "center_field",
+            "rmf.calibration must be 'center_field'.");
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(rmf_radius > 0.0_rt, "rmf.radius must be positive.");
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(rmf_width > 0.0_rt, "rmf.width must be positive.");
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            rmf_frequency >= 0.0_rt, "rmf.frequency must be nonnegative.");
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            rmf_ramp_time >= 0.0_rt, "rmf.ramp_time must be nonnegative.");
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            rmf_sense == -1 || rmf_sense == 1, "rmf.sense must be either -1 or +1.");
+
+        if (has_B0) {
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(rmf_B0 >= 0.0_rt, "rmf.B0 must be nonnegative.");
+            amrex::Real const u0 = -rmf_radius / (2.0_rt * rmf_width);
+            amrex::Real const sigma0 = 0.5_rt * (1.0_rt - std::tanh(u0));
+            rmf_M0 = 3.0_rt * rmf_B0 / (2.0_rt * PhysConst::mu0 * sigma0);
+        } else {
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(rmf_M0 >= 0.0_rt, "rmf.M0 must be nonnegative.");
+        }
+    }
     //___________________________________________________________________________
 
 
