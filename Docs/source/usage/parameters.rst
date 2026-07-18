@@ -2530,7 +2530,8 @@ are applied to the grid directly. In particular, these fields can be seen in the
     This is a time-dependent source term for Maxwell's equations, unlike
     :pp:param:`warpx.E_ext_grid_init_style` and
     :pp:param:`warpx.B_ext_grid_init_style`, which initialize grid fields. The
-    current parser is not implemented for RZ geometry.
+    current parser is not implemented for RZ geometry, mesh-refinement
+    subcycling, or Vay current deposition.
 
 .. pp:param:: warpx.M[x/y/z]_external_grid_function(x,y,z,t)
     :type: string
@@ -2548,7 +2549,8 @@ are applied to the grid directly. In particular, these fields can be seen in the
     the Yee-grid curl is discretely divergence-free. It can be combined with
     :pp:param:`warpx.J[x/y/z]_external_grid_function(x,y,z,t)`; both sources are
     additive. This parameter is currently implemented only for the Yee Maxwell
-    solver on a three-dimensional Cartesian staggered grid.
+    solver on a three-dimensional Cartesian staggered grid, without
+    mesh-refinement subcycling or Vay current deposition.
 
 .. pp:param:: warpx.E/B_external_grid
     :link_aliases:

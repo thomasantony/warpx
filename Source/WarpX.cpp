@@ -1097,6 +1097,14 @@ WarpX::ReadParameters ()
         // (collocated, staggered, hybrid)
         pp_warpx.query_enum_case_insensitive("grid_type", grid_type);
 
+        bool const has_external_grid_current =
+            m_p_ext_field_params->has_J_external_grid ||
+            m_p_ext_field_params->has_M_external_grid;
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            !has_external_grid_current || !m_do_subcycling,
+            "External J/M grid functions are not implemented with "
+            "warpx.do_subcycling=1.");
+
 #if defined(WARPX_DIM_3D)
         if (m_p_ext_field_params->has_M_external_grid) {
             // TODO: Dispatch curl(M_ext) through the selected field solver to support
@@ -1267,6 +1275,14 @@ WarpX::ReadParameters ()
         pp_algo.query_enum_case_insensitive("current_deposition", current_deposition_algo);
         pp_algo.query_enum_case_insensitive("charge_deposition", charge_deposition_algo);
         pp_algo.query_enum_case_insensitive("particle_pusher", particle_pusher_algo);
+
+        bool const has_external_grid_current =
+            m_p_ext_field_params->has_J_external_grid ||
+            m_p_ext_field_params->has_M_external_grid;
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            !has_external_grid_current || current_deposition_algo != CurrentDepositionAlgo::Vay,
+            "External J/M grid functions are not implemented with "
+            "algo.current_deposition=vay.");
 
         // check for implicit evolve scheme
         if (evolve_scheme == EvolveScheme::Semi_Implicit_EM) {
