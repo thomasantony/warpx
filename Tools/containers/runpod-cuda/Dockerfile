@@ -96,6 +96,8 @@ RUN cmake \
     done && \
     rm -rf /tmp/warpx-build /opt/warpx/lib/*.a
 
+RUN test -x /opt/warpx/bin/warpx.rz
+
 FROM ghcr.io/astral-sh/uv:0.7.13 AS uv
 
 FROM nvidia/cuda:${CUDA_IMAGE_TAG}-runtime-ubuntu22.04 AS runtime
