@@ -2537,13 +2537,18 @@ are applied to the grid directly. In particular, these fields can be seen in the
     :type: string
     :optional:
 
-    This parameter defines an externally applied magnetization field, in
-    :math:`\mathrm{A}/\mathrm{m}`, whose discrete curl is added to the grid
-    current as :math:`\boldsymbol{J}_{\mathrm{ext}} = \nabla \times
-    \boldsymbol{M}_{\mathrm{ext}}`. The parser expression is evaluated on the
-    Yee-grid locations of the corresponding magnetic-field component at the
-    current half time step. Constants required in the expression can be set
-    using ``my_constants``.
+    This parameter defines an external current vector potential
+    :math:`\boldsymbol{M}_{\mathrm{ext}}`, in :math:`\mathrm{A}/\mathrm{m}`,
+    whose discrete curl is added to the grid current as
+    :math:`\boldsymbol{J}_{\mathrm{ext}} = \nabla \times
+    \boldsymbol{M}_{\mathrm{ext}}`. When
+    :math:`\boldsymbol{M}_{\mathrm{ext}}` represents a physical magnetization,
+    this curl is the corresponding magnetization current. It can also be used
+    simply as a vector potential for a divergence-free external current, without
+    implying the presence of magnetic material. The parser expression is
+    evaluated on the Yee-grid locations of the corresponding magnetic-field
+    component at the current half time step. Constants required in the
+    expression can be set using ``my_constants``.
 
     This form is useful for time-dependent closed-loop current sources because
     the Yee-grid curl is discretely divergence-free. It can be combined with
