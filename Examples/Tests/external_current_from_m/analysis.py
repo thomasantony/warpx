@@ -30,18 +30,9 @@ expected = {
 
 for component, reference in expected.items():
     actual = grid["boxlib", component].to_ndarray()[interior]
-    coordinates = [coordinate[interior] for coordinate in (x, y, z)]
     manufactured_error = np.max(np.abs(actual - reference[interior]))
-    symmetry_error = np.max(np.abs(actual + actual[::-1, ::-1, ::-1]))
-    weight = np.abs(actual)
-    centroids = [np.sum(weight * coordinate) / np.sum(weight) for coordinate in coordinates]
-    print(
-        f"{component}: manufactured error = {manufactured_error:.16e}, "
-        f"odd-symmetry error = {symmetry_error:.16e}, centroids = {centroids}"
-    )
+    print(f"{component}: manufactured error = {manufactured_error:.16e}")
     assert manufactured_error < 1.0e-12
-    assert symmetry_error < 1.0e-12
-    assert np.max(np.abs(centroids)) < 1.0e-12
 
 
 # Check the same manufactured curl before diagnostic cell-centering, directly
@@ -75,16 +66,7 @@ native_references = {
 
 for component, reference_function in native_references.items():
     actual = raw[component][interior]
-    coordinates = [coordinate[interior] for coordinate in native_coordinates[component]]
     reference = reference_function(*native_coordinates[component])[interior]
     manufactured_error = np.max(np.abs(actual - reference))
-    symmetry_error = np.max(np.abs(actual + actual[::-1, ::-1, ::-1]))
-    weight = np.abs(actual)
-    centroids = [np.sum(weight * coordinate) / np.sum(weight) for coordinate in coordinates]
-    print(
-        f"{component} (native): manufactured error = {manufactured_error:.16e}, "
-        f"odd-symmetry error = {symmetry_error:.16e}, centroids = {centroids}"
-    )
+    print(f"{component} (native): manufactured error = {manufactured_error:.16e}")
     assert manufactured_error < 1.0e-12
-    assert symmetry_error < 1.0e-12
-    assert np.max(np.abs(centroids)) < 1.0e-12

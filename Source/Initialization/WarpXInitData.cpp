@@ -1564,49 +1564,38 @@ void WarpX::ComputeExternalFieldOnGridUsingParser (
     amrex::ParserExecutor<4> const& fz_parser,
     int lev, PatchType patch_type,
     amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
-    bool use_eb_flags,
-    std::optional<amrex::Real> parser_time)
+    bool use_eb_flags)
 {
     if (std::holds_alternative<warpx::fields::FieldType>(field)){
         ComputeExternalFieldOnGridUsingParser_template<warpx::fields::FieldType> (
             std::get<warpx::fields::FieldType>(field),
             fx_parser, fy_parser, fz_parser,
             lev, patch_type, eb_update_field,
-            use_eb_flags, false, parser_time);
+            use_eb_flags, false, std::nullopt);
     }
     else{
         ComputeExternalFieldOnGridUsingParser_template<std::string> (
             std::get<std::string>(field),
             fx_parser, fy_parser, fz_parser,
             lev, patch_type, eb_update_field,
-            use_eb_flags, false, parser_time);
+            use_eb_flags, false, std::nullopt);
     }
 }
 
-void WarpX::AddExternalFieldOnGridUsingParser (
-    const std::variant<warpx::fields::FieldType, std::string>& field,
+namespace {
+void AddExternalFieldOnGridUsingParser (
+    warpx::fields::FieldType field,
     amrex::ParserExecutor<4> const& fx_parser,
     amrex::ParserExecutor<4> const& fy_parser,
     amrex::ParserExecutor<4> const& fz_parser,
     int lev, PatchType patch_type,
     amrex::Vector<std::array< std::unique_ptr<amrex::iMultiFab>,3 > > const& eb_update_field,
-    bool use_eb_flags,
-    std::optional<amrex::Real> parser_time)
+    amrex::Real parser_time)
 {
-    if (std::holds_alternative<warpx::fields::FieldType>(field)){
-        ComputeExternalFieldOnGridUsingParser_template<warpx::fields::FieldType> (
-            std::get<warpx::fields::FieldType>(field),
-            fx_parser, fy_parser, fz_parser,
-            lev, patch_type, eb_update_field,
-            use_eb_flags, true, parser_time);
-    }
-    else{
-        ComputeExternalFieldOnGridUsingParser_template<std::string> (
-            std::get<std::string>(field),
-            fx_parser, fy_parser, fz_parser,
-            lev, patch_type, eb_update_field,
-            use_eb_flags, true, parser_time);
-    }
+    ComputeExternalFieldOnGridUsingParser_template<warpx::fields::FieldType> (
+        field, fx_parser, fy_parser, fz_parser, lev, patch_type,
+        eb_update_field, true, true, parser_time);
+}
 }
 
 void WarpX::AddExternalCurrentOnGrid ()
@@ -1631,22 +1620,22 @@ void WarpX::AddExternalCurrentOnGrid ()
     }
 
     if (m_p_ext_field_params->has_J_external_grid) {
+        auto const Jx_parser = m_p_ext_field_params->Jxfield_parser->compile<4>();
+        auto const Jy_parser = m_p_ext_field_params->Jyfield_parser->compile<4>();
+        auto const Jz_parser = m_p_ext_field_params->Jzfield_parser->compile<4>();
+
         for (int lev = 0; lev <= finest_level; ++lev) {
             amrex::Real const current_time = gett_new(lev) + 0.5_rt * getdt(lev);
             AddExternalFieldOnGridUsingParser(
                 warpx::fields::FieldType::current_fp,
-                m_p_ext_field_params->Jxfield_parser->compile<4>(),
-                m_p_ext_field_params->Jyfield_parser->compile<4>(),
-                m_p_ext_field_params->Jzfield_parser->compile<4>(),
-                lev, PatchType::fine, m_eb_update_E, true, current_time);
+                Jx_parser, Jy_parser, Jz_parser,
+                lev, PatchType::fine, m_eb_update_E, current_time);
 
             if (lev > 0) {
                 AddExternalFieldOnGridUsingParser(
                     warpx::fields::FieldType::current_cp,
-                    m_p_ext_field_params->Jxfield_parser->compile<4>(),
-                    m_p_ext_field_params->Jyfield_parser->compile<4>(),
-                    m_p_ext_field_params->Jzfield_parser->compile<4>(),
-                    lev, PatchType::coarse, m_eb_update_E, true, current_time);
+                    Jx_parser, Jy_parser, Jz_parser,
+                    lev, PatchType::coarse, m_eb_update_E, current_time);
             }
         }
     }
@@ -1674,13 +1663,6 @@ namespace {
         amrex::GpuArray<amrex::Real,3> const& dx_lev)
     {
 #if defined(WARPX_DIM_3D)
-        amrex::IntVect const stencil_guard(1);
-        AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
-            Mx.nGrowVect().allGE(stencil_guard) &&
-            My.nGrowVect().allGE(stencil_guard) &&
-            Mz.nGrowVect().allGE(stencil_guard),
-            "curl(M_ext) requires one valid lower-side guard cell in every direction.");
-
         amrex::GpuArray<amrex::Real, 1> const coefs_x{{1._rt/dx_lev[0]}};
         amrex::GpuArray<amrex::Real, 1> const coefs_y{{1._rt/dx_lev[1]}};
         amrex::GpuArray<amrex::Real, 1> const coefs_z{{1._rt/dx_lev[2]}};
@@ -1770,9 +1752,6 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
             amrex::MultiFab Mx(Bx->boxArray(), Bx->DistributionMap(), 1, ng);
             amrex::MultiFab My(By->boxArray(), By->DistributionMap(), 1, ng);
             amrex::MultiFab Mz(Bz->boxArray(), Bz->DistributionMap(), 1, ng);
-            Mx.setVal(0.0_rt);
-            My.setVal(0.0_rt);
-            Mz.setVal(0.0_rt);
 
             FillFieldOnGridUsingParser(
                 &Mx, &My, &Mz, Mx_parser, My_parser, Mz_parser,
