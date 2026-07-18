@@ -16,13 +16,16 @@
 #include <ablastr/particles/NodalFieldGather.H>
 #include <ablastr/profiler/ProfilerWrapper.H>
 
-#include <AMReX_Geometry.H>
-#include <AMReX_ParmParse.H>
-#include <AMReX_Reduce.H>
-#include <AMReX_Tuple.H>
 #include <AMReX.H>
 #include <AMReX_Algorithm.H>
+#include <AMReX_Geometry.H>
+#include <AMReX_GpuDevice.H>
+#include <AMReX_ParmParse.H>
 #include <AMReX_RealVect.H>
+#include <AMReX_Reduce.H>
+#include <AMReX_Tuple.H>
+
+#include <type_traits>
 
 using namespace amrex::literals;
 
@@ -421,6 +424,8 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                 }
 
                 auto& species_buffer = buffer[i];
+                bool const stage_through_device =
+                    amrex::Gpu::Device::useDeviceForHostResults();
                 for (int lev = 0; lev < pc.numLevels(); ++lev){
                     for(PIter pti(pc, lev); pti.isValid(); ++pti){
                         species_buffer.DefineAndReturnParticleTile(
@@ -445,6 +450,14 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
 
                         auto& ptile_buffer =
                             species_buffer.ParticlesAt(lev, pti.index(), pti.LocalTileIndex());
+                        using BufferTile = std::remove_reference_t<decltype(ptile_buffer)>;
+                        BufferTile device_tile;
+                        if (stage_through_device) {
+                            device_tile.define(
+                                ptile_buffer.NumRuntimeRealComps(),
+                                ptile_buffer.NumRuntimeIntComps(),
+                                nullptr, nullptr, amrex::The_Device_Arena());
+                        }
 
                         const auto& ptile = plevel.at(index);
                         auto np = ptile.numParticles();
@@ -477,6 +490,7 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                           // the resize below will not shrink the capacity
                           if (new_np > capacity) { ptile_buffer.reserve(2*new_np); }
                           ptile_buffer.resize(new_np);
+                          if (stage_through_device) { device_tile.resize(np_to_add); }
                         }
                         {
                           ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::filterAndTransform");
@@ -488,11 +502,19 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                           const int time_scraped_index = buf.GetRealCompIndex("timeScraped") - WarpXParticleContainer::NArrayReal;
                           const int normal_index = buf.GetRealCompIndex("nx") - WarpXParticleContainer::NArrayReal;
                           const int step = warpx_instance.getistep(0);
-                          amrex::filterAndTransformParticles(ptile_buffer, ptile,
-                                                             predicate,
-                                                             CopyAndTimestamp{step_scraped_index, delta_index, time_scraped_index, normal_index,
-                                                                              step, cur_time, dt, idim, iside},
-                                                             0, dst_index);
+                          auto transform = CopyAndTimestamp{
+                              step_scraped_index, delta_index, time_scraped_index, normal_index,
+                              step, cur_time, dt, idim, iside};
+                          if (stage_through_device) {
+                              auto const copied = amrex::filterAndTransformParticles(
+                                  device_tile, ptile, predicate, transform, 0, 0);
+                              amrex::copyParticlesHostDevice(
+                                  ptile_buffer, device_tile, 0, dst_index, copied,
+                                  amrex::Gpu::deviceToHost);
+                          } else {
+                              amrex::filterAndTransformParticles(
+                                  ptile_buffer, ptile, predicate, transform, 0, dst_index);
+                          }
                         }
                     }
                 }
@@ -532,6 +554,8 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
             }
 
             auto& species_buffer = buffer[i];
+            bool const stage_through_device =
+                amrex::Gpu::Device::useDeviceForHostResults();
             for (int lev = 0; lev < pc.numLevels(); ++lev) {
                 for (PIter pti(pc, lev); pti.isValid(); ++pti) {
                     species_buffer.DefineAndReturnParticleTile(
@@ -554,6 +578,14 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
                     const auto getPosition = GetParticlePosition<PIdx>(pti);
                     auto &ptile_buffer = species_buffer.DefineAndReturnParticleTile(lev, pti.index(),
                                                                                     pti.LocalTileIndex());
+                    using BufferTile = std::remove_reference_t<decltype(ptile_buffer)>;
+                    BufferTile device_tile;
+                    if (stage_through_device) {
+                        device_tile.define(
+                            ptile_buffer.NumRuntimeRealComps(),
+                            ptile_buffer.NumRuntimeIntComps(),
+                            nullptr, nullptr, amrex::The_Device_Arena());
+                    }
                     const auto &ptile = plevel.at(index);
                     auto np = ptile.numParticles();
                     if (np == 0) { continue; }
@@ -591,6 +623,7 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
                           // the resize below will not shrink the capacity
                         if (new_np > capacity) { ptile_buffer.reserve(2*new_np); }
                         ptile_buffer.resize(new_np);
+                        if (stage_through_device) { device_tile.resize(np_to_add); }
                     }
                     auto &warpx = WarpX::GetInstance();
                     const auto dt = warpx.getdt(pti.GetLevel());
@@ -603,12 +636,19 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
 
                     {
                         ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::filterTransformEB");
-                        amrex::filterAndTransformParticles(ptile_buffer, ptile, predicate,
-                                                           FindEmbeddedBoundaryIntersection{step_scraped_index, delta_index,
-                                                                                            time_scraped_index, normal_index,
-                                                                                            step, cur_time, dt, phiarr, dxi, plo,
-                                                                                            pc.getMass()},
-                                                           0, dst_index);
+                        auto transform = FindEmbeddedBoundaryIntersection{
+                            step_scraped_index, delta_index, time_scraped_index, normal_index,
+                            step, cur_time, dt, phiarr, dxi, plo, pc.getMass()};
+                        if (stage_through_device) {
+                            auto const copied = amrex::filterAndTransformParticles(
+                                device_tile, ptile, predicate, transform, 0, 0);
+                            amrex::copyParticlesHostDevice(
+                                ptile_buffer, device_tile, 0, dst_index, copied,
+                                amrex::Gpu::deviceToHost);
+                        } else {
+                            amrex::filterAndTransformParticles(
+                                ptile_buffer, ptile, predicate, transform, 0, dst_index);
+                        }
 
                     }
                 }

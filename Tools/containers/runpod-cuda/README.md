@@ -68,6 +68,20 @@ RunPod caveats:
 - The MPI in this image is intended for single-container runs. Multi-node cloud
   MPI needs provider-specific networking and launch configuration.
 
+## GPU mapped-memory compatibility
+
+Some GPU container runtimes do not support device access to mapped pinned host
+memory. Enable the AMReX compatibility mode with:
+
+```text
+amrex.reduce_use_device_result = 1
+```
+
+Final `ReduceOps` tuples are copied to ordinary host storage and reduced on the
+CPU in this mode. Other affected AMReX primitives use explicit device staging
+and host copies. The setting does not change the main, managed, pinned, or MPI
+communication arenas.
+
 ## Optional S3/R2 Uploads
 
 The runtime includes `uv`, so the AWS CLI can be run on demand with `uvx` instead
