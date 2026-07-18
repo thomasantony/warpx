@@ -1097,6 +1097,18 @@ WarpX::ReadParameters ()
         // (collocated, staggered, hybrid)
         pp_warpx.query_enum_case_insensitive("grid_type", grid_type);
 
+#if defined(WARPX_DIM_3D)
+        if (m_p_ext_field_params->has_M_external_grid) {
+            // TODO: Dispatch curl(M_ext) through the selected field solver to support
+            // other finite-difference algorithms and non-Cartesian geometries.
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+                electromagnetic_solver_id == ElectromagneticSolverAlgo::Yee &&
+                    grid_type == GridType::Staggered,
+                "warpx.M[x/y/z]_external_grid_function requires a 3D Cartesian "
+                "staggered grid with algo.maxwell_solver=yee.");
+        }
+#endif
+
         // Use same shape factors in all directions, for gathering
         if (grid_type == GridType::Collocated) { galerkin_interpolation = false; }
 

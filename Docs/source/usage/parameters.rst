@@ -2547,8 +2547,8 @@ are applied to the grid directly. In particular, these fields can be seen in the
     This form is useful for time-dependent closed-loop current sources because
     the Yee-grid curl is discretely divergence-free. It can be combined with
     :pp:param:`warpx.J[x/y/z]_external_grid_function(x,y,z,t)`; both sources are
-    additive. This parameter is currently implemented only for three-dimensional
-    Cartesian geometry.
+    additive. This parameter is currently implemented only for the Yee Maxwell
+    solver on a three-dimensional Cartesian staggered grid.
 
 .. pp:param:: warpx.E/B_external_grid
     :link_aliases:

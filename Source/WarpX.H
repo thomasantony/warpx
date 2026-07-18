@@ -876,14 +876,14 @@ public:
      *
      * M_ext is filled on B-staggering (via Mx/My/Mz_external_grid_function) and
      * its curl is taken with a Yee finite-difference stencil directly onto the
-     * current (E-type) staggering, at t^{n+1/2}. Because this is the same discrete
-     * curl operator used elsewhere to advance E from B, the resulting J_ext is
-     * discretely divergence-free (div(curl) == 0 to machine precision), unlike a
-     * directly parsed J_ext. This is the preferred way to specify closed-loop
-     * external current sources (e.g. RMF antenna coils); direct
+     * current (E-type) staggering, at t^{n+1/2}. It uses the Cartesian Yee
+     * derivative primitives, so the resulting J_ext is discretely divergence-free
+     * to floating-point precision, unlike a directly parsed J_ext. This is the
+     * preferred way to specify closed-loop external current sources (e.g. RMF
+     * antenna coils); direct
      * Jx/Jy/Jz_external_grid_function remains supported for legacy/general use.
      *
-     * Currently only implemented for 3D Cartesian.
+     * Currently only implemented for the 3D Cartesian Yee solver on a staggered grid.
      */
     void AddExternalCurrentFromMOnGrid ();
 
