@@ -22,8 +22,9 @@
 #endif
 #include "Fields.H"
 #include "FieldSolver/ElectrostaticSolvers/ElectrostaticSolver.H"
-#include "FieldSolver/FiniteDifferenceSolver/MacroscopicProperties/MacroscopicProperties.H"
+#include "FieldSolver/FiniteDifferenceSolver/FiniteDifferenceAlgorithms/CartesianYeeAlgorithm.H"
 #include "FieldSolver/FiniteDifferenceSolver/HybridPICModel/HybridPICModel.H"
+#include "FieldSolver/FiniteDifferenceSolver/MacroscopicProperties/MacroscopicProperties.H"
 #include "FieldSolver/ImplicitSolvers/ImplicitSolver.H"
 #include "Filter/BilinearFilter.H"
 #include "Filter/NCIGodfreyFilter.H"
@@ -1663,11 +1664,9 @@ namespace {
      *    Jy += dMx/dz - dMz/dx
      *    Jz += dMy/dx - dMx/dy
      *
-     *  This is exactly the discrete curl used elsewhere in the Yee algorithm to
-     *  advance E from B (Ampere's law), so div(curl(M)) == 0 to machine
-     *  precision on this mesh by construction (the discrete divergence and this
-     *  discrete curl are built from the same difference stencils and cancel
-     *  identically, independent of floating-point round-off in M itself).
+     *  This uses the Cartesian Yee derivative primitives that advance E from B
+     *  in Ampere's law. The discrete divergence and curl use compatible
+     *  difference stencils, so div(curl(M)) vanishes to floating-point precision.
      */
     void AddCurlOfMToCurrent (
         amrex::MultiFab& Jx, amrex::MultiFab& Jy, amrex::MultiFab& Jz,
@@ -1682,9 +1681,9 @@ namespace {
             Mz.nGrowVect().allGE(stencil_guard),
             "curl(M_ext) requires one valid lower-side guard cell in every direction.");
 
-        amrex::Real const dxinv = 1._rt/dx_lev[0];
-        amrex::Real const dyinv = 1._rt/dx_lev[1];
-        amrex::Real const dzinv = 1._rt/dx_lev[2];
+        amrex::GpuArray<amrex::Real, 1> const coefs_x{{1._rt/dx_lev[0]}};
+        amrex::GpuArray<amrex::Real, 1> const coefs_y{{1._rt/dx_lev[1]}};
+        amrex::GpuArray<amrex::Real, 1> const coefs_z{{1._rt/dx_lev[2]}};
 
         for (MFIter mfi(Jx, TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& tbx = mfi.tilebox(Jx.ixType().toIntVect());
@@ -1700,16 +1699,25 @@ namespace {
 
             amrex::ParallelFor(tbx, tby, tbz,
                 [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                    Jxfab(i,j,k) += (Mzfab(i,j,k) - Mzfab(i,j-1,k)) * dyinv
-                                  - (Myfab(i,j,k) - Myfab(i,j,k-1)) * dzinv;
+                    Jxfab(i,j,k) +=
+                        - CartesianYeeAlgorithm::DownwardDz(
+                            Myfab, coefs_z.data(), 1, i, j, k)
+                        + CartesianYeeAlgorithm::DownwardDy(
+                            Mzfab, coefs_y.data(), 1, i, j, k);
                 },
                 [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                    Jyfab(i,j,k) += (Mxfab(i,j,k) - Mxfab(i,j,k-1)) * dzinv
-                                  - (Mzfab(i,j,k) - Mzfab(i-1,j,k)) * dxinv;
+                    Jyfab(i,j,k) +=
+                        - CartesianYeeAlgorithm::DownwardDx(
+                            Mzfab, coefs_x.data(), 1, i, j, k)
+                        + CartesianYeeAlgorithm::DownwardDz(
+                            Mxfab, coefs_z.data(), 1, i, j, k);
                 },
                 [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                    Jzfab(i,j,k) += (Myfab(i,j,k) - Myfab(i-1,j,k)) * dxinv
-                                  - (Mxfab(i,j,k) - Mxfab(i,j-1,k)) * dyinv;
+                    Jzfab(i,j,k) +=
+                        - CartesianYeeAlgorithm::DownwardDy(
+                            Mxfab, coefs_y.data(), 1, i, j, k)
+                        + CartesianYeeAlgorithm::DownwardDx(
+                            Myfab, coefs_x.data(), 1, i, j, k);
                 }
             );
         }
