@@ -3,6 +3,7 @@
 import sys
 
 import numpy as np
+import openpmd_api as io
 import yt
 from read_raw_data import read_data
 
@@ -113,13 +114,69 @@ def divergence_m1(raw, suffix):
     )
 
 
+def check_axis_continuity(raw, suffix, source_time):
+    jr = raw[f"jx_fp{suffix}"]
+    jt = raw[f"jy_fp{suffix}"]
+    jz = raw[f"jz_fp{suffix}"]
+
+    # A regular m=1 vector field satisfies Jtheta = -i*Jr on the axis. Jr is
+    # radially cell-centered and has no independent r=0 degree of freedom, so
+    # construct its axis limit from the same regular magnetization and compare
+    # that limit with the production Jtheta value stored at r=0.
+    z = np.arange(9) - 4.0
+    mt_hi = magnetization_modes(np.zeros_like(z), z + 0.5 * DZ, source_time)
+    mt_lo = magnetization_modes(np.zeros_like(z), z - 0.5 * DZ, source_time)
+    jr_axis_real = -(mt_hi["mt_real"] - mt_lo["mt_real"]) / DZ
+    jr_axis_imag = -(mt_hi["mt_imag"] - mt_lo["mt_imag"]) / DZ
+    real_error = np.max(np.abs(jt[0, 1:-1, 1] - jr_axis_imag[1:-1]))
+    imag_error = np.max(np.abs(jt[0, 1:-1, 2] + jr_axis_real[1:-1]))
+    axial_error = np.max(np.abs(jz[0, 1:-1, 1:3]))
+    axis_error = max(real_error, imag_error, axial_error)
+    print(f"current_fp{suffix}: m=1 axis continuity error = {axis_error:.16e}")
+    assert axis_error < 2.0e-12
+
+    # The production RZ divergence has no independent higher-mode degree of
+    # freedom at r=0: it regularizes div(J)_m to zero there. The adjacent r=dr
+    # control volume is covered by the ordinary modal divergence below.
+    div_real, div_imag = divergence_m1(raw, suffix)
+    first_off_axis_error = max(
+        np.max(np.abs(div_real[0])), np.max(np.abs(div_imag[0]))
+    )
+    print(
+        f"current_fp{suffix}: first off-axis divergence error = "
+        f"{first_off_axis_error:.16e}; axis divergence = 0 by production regularity"
+    )
+    assert first_off_axis_error < 2.0e-12
+
+
+def check_openpmd_contract(path):
+    series = io.Series(f"{path}/openpmd_%T.h5", io.Access.read_only)
+    iteration = series.iterations[max(series.iterations)]
+    assert "j" in iteration.meshes
+    assert "j_external" in iteration.meshes
+
+    for component in ("r", "t", "z"):
+        total = iteration.meshes["j"][component].load_chunk()
+        external = iteration.meshes["j_external"][component].load_chunk()
+        series.flush()
+        assert total.shape[0] == NCOMPS
+        assert total.shape == external.shape
+        error = np.max(np.abs(total - external))
+        print(
+            f"openPMD j_external/{component}: thetaMode shape = {total.shape}, "
+            f"total/external error = {error:.16e}"
+        )
+        assert np.max(np.abs(external[1:3])) > 1.0e-3
+        assert error < 2.0e-12
+
+
 interiors = {
     "jx_fp": (slice(None), slice(1, -1), slice(None)),
     "jy_fp": (slice(0, -1), slice(1, -1), slice(None)),
     "jz_fp": (slice(0, -1), slice(1, -1), slice(None)),
 }
 
-for plotfile in sys.argv[1:]:
+for plotfile in sys.argv[1:-1]:
     diagnostic_time = float(yt.load(plotfile).current_time)
     source_time = diagnostic_time - 0.5 * DT
     raw = read_data(plotfile)[0]
@@ -139,6 +196,7 @@ for plotfile in sys.argv[1:]:
             assert error < 2.0e-12
 
     for suffix in ("", "_external"):
+        check_axis_continuity(raw, suffix, source_time)
         div_real, div_imag = divergence_m1(raw, suffix)
         divergence_error = max(
             np.max(np.abs(div_real)), np.max(np.abs(div_imag))
@@ -148,3 +206,5 @@ for plotfile in sys.argv[1:]:
             f"RZ RMF divergence error = {divergence_error:.16e}"
         )
         assert divergence_error < 2.0e-12
+
+check_openpmd_contract(sys.argv[-1])

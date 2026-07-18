@@ -32,9 +32,17 @@ rmf.ramp_time = 2.0e-9
 rmf.sense = 1
 rmf.calibration = center_field
 
-diagnostics.diags_names = diag
+diagnostics.diags_names = diag opmd
 diag.intervals = 1
 diag.diag_type = Full
 diag.format = plotfile
 diag.fields_to_plot = jr jt jz
 diag.plot_raw_fields = 1
+
+# Verify the standard openPMD thetaMode contract for total and external current.
+opmd.intervals = 1
+opmd.diag_type = Full
+opmd.format = openpmd
+opmd.openpmd_backend = h5
+opmd.file_prefix = diags/openpmd
+opmd.fields_to_plot = jr jt jz jr_external jt_external jz_external
