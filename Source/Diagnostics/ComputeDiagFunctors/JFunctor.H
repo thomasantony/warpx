@@ -22,11 +22,14 @@ public:
      * \param[in] deposit_current whether to deposit current. Used to output current in cases
                   where no field solve is used.
      * \param[in] ncomp Number of component of mf_src to cell-center in dst multifab.
+     * \param[in] external_current whether to output the external source current instead of
+     *            the total current.
      */
     JFunctor (int dir, int lev,
              amrex::IntVect crse_ratio,
              bool convertRZmodes2cartesian=true,
-             bool deposit_current=false, int ncomp=1);
+             bool deposit_current=false, int ncomp=1,
+             bool external_current=false);
     /** \brief Cell-center m_mf_src and write the result in mf_dst.
      *
      * In cylindrical geometry, by default this functor average all components
@@ -46,6 +49,8 @@ private:
     bool m_convertRZmodes2cartesian;
     /** whether to deposit current density before saving */
     bool m_deposit_current;
+    /** whether to save the external source current instead of the total current */
+    bool m_external_current;
 };
 
 #endif // WARPX_JFUNCTOR_H_

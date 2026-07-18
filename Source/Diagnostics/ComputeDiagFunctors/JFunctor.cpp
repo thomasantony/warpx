@@ -22,11 +22,16 @@ using warpx::fields::FieldType;
 JFunctor::JFunctor (const int dir, int lev,
                    amrex::IntVect crse_ratio,
                    bool convertRZmodes2cartesian,
-                   bool deposit_current, int ncomp)
+                   bool deposit_current, int ncomp,
+                   bool external_current)
     : ComputeDiagFunctor(ncomp, crse_ratio), m_dir(dir), m_lev(lev),
       m_convertRZmodes2cartesian(convertRZmodes2cartesian),
-      m_deposit_current(deposit_current)
-{ }
+      m_deposit_current(deposit_current), m_external_current(external_current)
+{
+    WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+        !m_external_current || !m_deposit_current,
+        "The external source current cannot be deposited by JFunctor.");
+}
 
 void
 JFunctor::operator() (amrex::MultiFab& mf_dst, int dcomp, const int /*i_buffer*/) const
@@ -35,7 +40,14 @@ JFunctor::operator() (amrex::MultiFab& mf_dst, int dcomp, const int /*i_buffer*/
 
     auto& warpx = WarpX::GetInstance();
     /** pointer to source multifab (can be multi-component) */
-    amrex::MultiFab* m_mf_src = warpx.m_fields.get(FieldType::current_fp,Direction{m_dir},m_lev);
+    FieldType const current_type = m_external_current ?
+        FieldType::current_fp_external : FieldType::current_fp;
+    WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+        warpx.m_fields.has_vector(current_type, m_lev),
+        m_external_current ?
+            "External current diagnostics require an external grid current source." :
+            "The current field is not allocated.");
+    amrex::MultiFab* m_mf_src = warpx.m_fields.get(current_type, Direction{m_dir}, m_lev);
 
     // Deposit current if no solver or the electrostatic solver is being used
     if (m_deposit_current)

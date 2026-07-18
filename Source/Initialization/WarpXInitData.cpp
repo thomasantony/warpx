@@ -1891,6 +1891,8 @@ void WarpX::AddExternalCurrentFromMOnGrid ()
         return;
     }
 
+    ABLASTR_PROFILE("WarpX::AddExternalCurrentFromMOnGrid()");
+
 #if defined(WARPX_DIM_3D)
     using ablastr::fields::Direction;
 
