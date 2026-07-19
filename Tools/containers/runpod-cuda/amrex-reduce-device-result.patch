@@ -4,7 +4,7 @@ index 81ca11eaf..455e9eb05 100644
 +++ b/Src/Base/AMReX_GpuDevice.H
 @@ -127,6 +127,12 @@ public:
  #endif
- 
+
      static int deviceId () noexcept;
 +    /**
 +     * Use ordinary device memory followed by an explicit device-to-host copy
@@ -14,7 +14,7 @@ index 81ca11eaf..455e9eb05 100644
 +    static bool useDeviceForHostResults () noexcept;
      static int numDevicesUsed () noexcept; // Total number of device used
      static int numDevicePartners () noexcept; // Number of partners sharing my device
- 
+
 diff --git a/Src/Base/AMReX_GpuDevice.cpp b/Src/Base/AMReX_GpuDevice.cpp
 index d6f3e3fe1..37b399bb0 100644
 --- a/Src/Base/AMReX_GpuDevice.cpp
@@ -22,7 +22,7 @@ index d6f3e3fe1..37b399bb0 100644
 @@ -694,6 +694,17 @@ Device::deviceId () noexcept
      return device_id;
  }
- 
+
 +bool
 +Device::useDeviceForHostResults () noexcept
 +{
@@ -60,44 +60,33 @@ index 9998e5cff..a3cc70323 100644
          amrex::The_Pinned_Arena()->free(amrex_i_hp); \
          return amrex_i_r; \
 diff --git a/Src/Base/AMReX_Reduce.H b/Src/Base/AMReX_Reduce.H
-index 3a808f429..bcfaf98a1 100644
+index 3a808f429..dc95045b4 100644
 --- a/Src/Base/AMReX_Reduce.H
 +++ b/Src/Base/AMReX_Reduce.H
-@@ -853,6 +853,34 @@ public:
-         auto const& stream = Gpu::gpuStream();
-         auto dp = reduce_data.devicePtr();
-         auto const& nblocks = reduce_data.nBlocks();
-+        if (Gpu::Device::useDeviceForHostResults()) {
-+            int const maxblocks = reduce_data.maxBlocks();
-+            int ntotal = 0;
-+            for (int const n : nblocks) {
-+                ntotal += n;
+@@ -902,6 +902,8 @@ public:
+             Gpu::dtoh_memcpy_async(hp, dtmp.data(), sizeof(ReduceTuple));
+ #endif
+ #else
++            bool const use_device_result = Gpu::Device::useDeviceForHostResults();
++            auto* result_p = use_device_result ? dp : hp;
+             amrex::launch<AMREX_GPU_MAX_THREADS>(1, 0, stream,
+             [=] AMREX_GPU_DEVICE () noexcept
+             {
+@@ -916,8 +918,11 @@ public:
+                     }
+                 }
+                 Reduce::detail::for_each_parallel<0, ReduceTuple, Ps...>(dst, r);
+-                if (threadIdx.x == 0) { *hp = dst; }
++                if (threadIdx.x == 0) { *result_p = dst; }
+             });
++            if (use_device_result) {
++                Gpu::dtoh_memcpy_async(hp, result_p, sizeof(ReduceTuple));
 +            }
-+            Vector<ReduceTuple> tmp(ntotal);
-+            Gpu::synchronize();
-+            int offset = 0;
-+            for (int istream = 0, nstreams = nblocks.size();
-+                 istream < nstreams; ++istream)
-+            {
-+                int const n = nblocks[istream];
-+                if (n > 0) {
-+                    Gpu::dtoh_memcpy(tmp.data()+offset, dp+istream*maxblocks,
-+                                     sizeof(ReduceTuple)*n);
-+                    offset += n;
-+                }
-+            }
-+            if (tmp.empty()) {
-+                Reduce::detail::for_each_init<0, ReduceTuple, Ps...>(*hp);
-+            } else {
-+                for (int i = 1; i < ntotal; ++i) {
-+                    Reduce::detail::for_each_local<0, ReduceTuple, Ps...>(tmp[0], tmp[i]);
-+                }
-+                *hp = tmp[0];
-+            }
-+        } else
- #if defined(AMREX_USE_SYCL)
-         if (reduce_data.maxStreamIndex() == 0 && nblocks[0] <= 4096) {
-             const int N = nblocks[0];
+ #endif
+             Gpu::streamSynchronize();
+         }
+
+         m_result_is_ready = true;
 diff --git a/Src/Base/AMReX_Scan.H b/Src/Base/AMReX_Scan.H
 index 8f2d08e18..6179cf4f2 100644
 --- a/Src/Base/AMReX_Scan.H
@@ -105,7 +94,7 @@ index 8f2d08e18..6179cf4f2 100644
 @@ -838,7 +838,12 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
          });
      }
- 
+
 -    T* totalsum_p = (a_ret_sum) ? (T*)(The_Pinned_Arena()->alloc(sizeof(T))) : nullptr;
 +    bool const use_device_result = Gpu::Device::useDeviceForHostResults();
 +    T* totalsum_h = (a_ret_sum) ? (T*)(The_Pinned_Arena()->alloc(sizeof(T))) : nullptr;
@@ -113,13 +102,13 @@ index 8f2d08e18..6179cf4f2 100644
 +    if (use_device_result && a_ret_sum) {
 +        totalsum_p = (T*)(The_Device_Arena()->alloc(sizeof(T)));
 +    }
- 
+
      amrex::launch_global<nthreads> <<<nblocks, nthreads, sm, stream>>> (
      [=] AMREX_GPU_DEVICE () noexcept
 @@ -940,13 +945,18 @@ T PrefixSum (N n, FIN const& fin, FOUT const& fout, TYPE, RetSum a_ret_sum = ret
          Gpu::streamSynchronize();
          AMREX_GPU_ERROR_CHECK();
- 
+
 +        if (use_device_result) {
 +            Gpu::dtoh_memcpy(totalsum_h, totalsum_p, sizeof(T));
 +            The_Device_Arena()->free(totalsum_p);
@@ -129,12 +118,12 @@ index 8f2d08e18..6179cf4f2 100644
      } else {
          Gpu::freeAsync(The_Arena(), tile_state_p);
      }
- 
+
 -    T ret = (a_ret_sum) ? *totalsum_p : T(0);
 -    if (totalsum_p) { The_Pinned_Arena()->free(totalsum_p); }
 +    T ret = (a_ret_sum) ? *totalsum_h : T(0);
 +    if (totalsum_h) { The_Pinned_Arena()->free(totalsum_h); }
- 
+
      return ret;
  }
 diff --git a/Src/Particle/AMReX_ParticleContainerI.H b/Src/Particle/AMReX_ParticleContainerI.H
@@ -144,7 +133,7 @@ index 2f0aecf25..88296f959 100644
 @@ -1219,8 +1219,25 @@ addParticles (const PCType& other, F const& f, bool local)
              auto dst_index = ptile.numParticles();
              ptile.resize(dst_index + np);
- 
+
 -            auto count = amrex::filterParticles(ptile, ptile_other, f,
 -                static_cast<decltype(np)>(0), dst_index, np);
 +            decltype(np) count;
@@ -166,7 +155,7 @@ index 2f0aecf25..88296f959 100644
 +                    ptile, ptile_other, f,
 +                    static_cast<decltype(np)>(0), dst_index, np);
 +            }
- 
+
              ptile.resize(dst_index + count);
          }
 diff --git a/Src/Particle/AMReX_ParticleLocator.H b/Src/Particle/AMReX_ParticleLocator.H
@@ -176,7 +165,7 @@ index e8e9ebc17..8fa568ea4 100644
 @@ -151,6 +151,31 @@ public:
              return;
          }
- 
+
 +        if (Gpu::Device::useDeviceForHostResults()) {
 +            m_bins_lo = m_host_boxes[0].smallEnd();
 +            m_bins_hi = m_host_boxes[0].bigEnd();
@@ -212,7 +201,7 @@ index 3a406a75e..e70848c91 100644
 @@ -225,6 +225,57 @@ void copyParticles (DstTile& dst, const SrcTile& src) noexcept
      copyParticles(dst, src, 0, 0, np);
  }
- 
+
 +/**
 + * \brief Copy particle storage between a host tile and a device tile without
 + * launching a kernel that dereferences the host pointer.
@@ -293,11 +282,11 @@ index 3a406a75e..e70848c91 100644
 +
      const auto src_data = src.getConstParticleTileData();
            auto dst_data = dst.getParticleTileData();
- 
+
 @@ -492,6 +563,48 @@ Index filterParticles (DstTile& dst, const SrcTile& src, Pred const& p,
      return filterParticles(dst, src, mask.dataPtr(), src_start, dst_start, n);
  }
- 
+
 +/**
 + * \brief Filter particles on the device and explicitly copy the selected
 + * particle storage to a pinned host destination.
@@ -348,9 +337,9 @@ index ba6adc4f6..03f6e6209 100644
 --- a/Src/Particle/AMReX_WriteBinaryParticleData.H
 +++ b/Src/Particle/AMReX_WriteBinaryParticleData.H
 @@ -953,7 +953,21 @@ void WriteBinaryParticleDataAsync (PC const& pc,
- 
+
                  new_ptile.resize(np);
- 
+
 -                amrex::filterParticles(new_ptile, ptile, KeepValidFilter());
 +                if constexpr (requires {
 +                    amrex::filterParticlesToHost(

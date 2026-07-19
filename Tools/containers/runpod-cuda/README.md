@@ -77,10 +77,10 @@ memory. Enable the AMReX compatibility mode with:
 amrex.reduce_use_device_result = 1
 ```
 
-Final `ReduceOps` tuples are copied to ordinary host storage and reduced on the
-CPU in this mode. Other affected AMReX primitives use explicit device staging
-and host copies. The setting does not change the main, managed, pinned, or MPI
-communication arenas.
+Final `ReduceOps` tuples are reduced on the GPU into the existing device
+scratch buffer and then copied explicitly to host storage in this mode. Other
+affected AMReX primitives use explicit device staging and host copies. The
+setting does not change the main, managed, pinned, or MPI communication arenas.
 
 ## Optional S3/R2 Uploads
 

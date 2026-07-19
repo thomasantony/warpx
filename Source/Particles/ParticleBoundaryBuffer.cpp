@@ -26,6 +26,7 @@
 #include <AMReX_Tuple.H>
 
 #include <type_traits>
+#include <vector>
 
 using namespace amrex::literals;
 
@@ -401,6 +402,56 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
     const amrex::Geometry& geom = warpx_instance.Geom(0);
     auto plo = geom.ProbLoArray();
     auto phi = geom.ProbHiArray();
+
+    // A host-visible reduction is relatively expensive on systems that cannot
+    // let the GPU write mapped pinned memory.  Check all saved domain
+    // boundaries at once so that the usual no-particle-scraped case needs one
+    // reduction per species instead of one per boundary.
+    std::vector<int> has_particles_outside(numSpecies(), 0);
+    for (int i = 0; i < numSpecies(); ++i)
+    {
+        amrex::GpuArray<int, AMREX_SPACEDIM> save_lo{};
+        amrex::GpuArray<int, AMREX_SPACEDIM> save_hi{};
+        bool save_any = false;
+        for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {
+            if (!geom.isPeriodic(idim)) {
+                save_lo[idim] = m_do_boundary_buffer[2*idim][i];
+                save_hi[idim] = m_do_boundary_buffer[2*idim+1][i];
+                save_any = save_any || save_lo[idim] || save_hi[idim];
+            }
+        }
+        if (!save_any) { continue; }
+
+        amrex::ReduceOps<amrex::ReduceOpSum> reduce_op;
+        amrex::ReduceData<int> reduce_data(reduce_op);
+        const WarpXParticleContainer& pc = mypc.GetParticleContainer(i);
+        {
+            ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::precheck");
+            for (int lev = 0; lev < pc.numLevels(); ++lev) {
+                for (PIter pti(pc, lev); pti.isValid(); ++pti) {
+                    auto const np = pti.numParticles();
+                    if (np == 0) { continue; }
+                    auto const particle_data = pti.GetParticleTile().getConstParticleTileData();
+                    reduce_op.eval(
+                        np, reduce_data,
+                        [=] AMREX_GPU_HOST_DEVICE (int ip) noexcept
+                        {
+                            auto const& p = particle_data.getSuperParticle(ip);
+                            for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {
+                                if ((save_lo[idim] && p.pos(idim) < plo[idim]) ||
+                                    (save_hi[idim] && p.pos(idim) >= phi[idim]))
+                                {
+                                    return 1;
+                                }
+                            }
+                            return 0;
+                        });
+                }
+            }
+            has_particles_outside[i] = amrex::get<0>(reduce_data.value());
+        }
+    }
+
     for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
     {
         if (geom.isPeriodic(idim)) { continue; }
@@ -422,6 +473,7 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                     buffer[i].AddRealComp("ny", true);
                     buffer[i].AddRealComp("nz", true);
                 }
+                if (!has_particles_outside[i]) { continue; }
 
                 auto& species_buffer = buffer[i];
                 bool const stage_through_device =
@@ -481,9 +533,10 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                         }
 
                         auto dst_index = ptile_buffer.numParticles();
+                        amrex::Long np_to_add = 0;
                         {
                           ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::resize");
-                          auto np_to_add = amrex::get<0>(reduce_data.value());
+                          np_to_add = amrex::get<0>(reduce_data.value());
                           auto new_np = dst_index + np_to_add;
                           const amrex::Long capacity = ptile_buffer.capacity() / species_buffer.superParticleSize();
                           // reserve space to avoid many small resize operations for performance reasons
@@ -492,6 +545,7 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
                           ptile_buffer.resize(new_np);
                           if (stage_through_device) { device_tile.resize(np_to_add); }
                         }
+                        if (np_to_add == 0) { continue; }
                         {
                           ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::filterAndTransform");
                           auto& warpx = WarpX::GetInstance();
@@ -614,9 +668,10 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
                     }
 
                     auto dst_index = ptile_buffer.numParticles();
+                    amrex::Long np_to_add = 0;
                     {
                         ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::resize_eb");
-                        auto np_to_add = amrex::get<0>(reduce_data.value());
+                        np_to_add = amrex::get<0>(reduce_data.value());
                         auto new_np = dst_index + np_to_add;
                         const amrex::Long capacity = ptile_buffer.capacity() / species_buffer.superParticleSize();
                         // reserve space to avoid many small resize operations for performance reasons
@@ -625,6 +680,7 @@ void ParticleBoundaryBuffer::gatherParticlesFromEmbeddedBoundaries (
                         ptile_buffer.resize(new_np);
                         if (stage_through_device) { device_tile.resize(np_to_add); }
                     }
+                    if (np_to_add == 0) { continue; }
                     auto &warpx = WarpX::GetInstance();
                     const auto dt = warpx.getdt(pti.GetLevel());
                     auto & buf = buffer[i];
