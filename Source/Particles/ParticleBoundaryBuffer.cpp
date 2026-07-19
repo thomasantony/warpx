@@ -413,8 +413,9 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
     std::vector<int> has_particles_outside(numSpecies(), 0);
     amrex::Gpu::DeviceVector<int> has_particles_outside_device(numSpecies());
     int* const has_particles_outside_p = has_particles_outside_device.data();
-    amrex::Gpu::memsetAsync(
-        has_particles_outside_p, 0, numSpecies()*sizeof(int));
+    amrex::ParallelFor(
+        numSpecies(), [=] AMREX_GPU_DEVICE (int i) noexcept
+        { has_particles_outside_p[i] = 0; });
     for (int i = 0; i < numSpecies(); ++i)
     {
         amrex::GpuArray<int, AMREX_SPACEDIM> save_lo{};
