@@ -19,7 +19,10 @@
 #include <AMReX.H>
 #include <AMReX_Algorithm.H>
 #include <AMReX_Geometry.H>
+#include <AMReX_GpuAtomic.H>
+#include <AMReX_GpuContainers.H>
 #include <AMReX_GpuDevice.H>
+#include <AMReX_GpuUtility.H>
 #include <AMReX_ParmParse.H>
 #include <AMReX_RealVect.H>
 #include <AMReX_Reduce.H>
@@ -405,9 +408,13 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
 
     // A host-visible reduction is relatively expensive on systems that cannot
     // let the GPU write mapped pinned memory.  Check all saved domain
-    // boundaries at once so that the usual no-particle-scraped case needs one
-    // reduction per species instead of one per boundary.
+    // boundaries and species at once so that the usual no-particle-scraped
+    // case needs one synchronization instead of one per boundary and species.
     std::vector<int> has_particles_outside(numSpecies(), 0);
+    amrex::Gpu::DeviceVector<int> has_particles_outside_device(numSpecies());
+    int* const has_particles_outside_p = has_particles_outside_device.data();
+    amrex::Gpu::memsetAsync(
+        has_particles_outside_p, 0, numSpecies()*sizeof(int));
     for (int i = 0; i < numSpecies(); ++i)
     {
         amrex::GpuArray<int, AMREX_SPACEDIM> save_lo{};
@@ -422,34 +429,34 @@ void ParticleBoundaryBuffer::gatherParticlesFromDomainBoundaries (MultiParticleC
         }
         if (!save_any) { continue; }
 
-        amrex::ReduceOps<amrex::ReduceOpSum> reduce_op;
-        amrex::ReduceData<int> reduce_data(reduce_op);
         const WarpXParticleContainer& pc = mypc.GetParticleContainer(i);
-        {
-            ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::precheck");
-            for (int lev = 0; lev < pc.numLevels(); ++lev) {
-                for (PIter pti(pc, lev); pti.isValid(); ++pti) {
-                    auto const np = pti.numParticles();
-                    if (np == 0) { continue; }
-                    auto const particle_data = pti.GetParticleTile().getConstParticleTileData();
-                    reduce_op.eval(
-                        np, reduce_data,
-                        [=] AMREX_GPU_HOST_DEVICE (int ip) noexcept
-                        {
-                            auto const& p = particle_data.getSuperParticle(ip);
-                            for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {
-                                if ((save_lo[idim] && p.pos(idim) < plo[idim]) ||
-                                    (save_hi[idim] && p.pos(idim) >= phi[idim]))
-                                {
-                                    return 1;
-                                }
+        for (int lev = 0; lev < pc.numLevels(); ++lev) {
+            for (PIter pti(pc, lev); pti.isValid(); ++pti) {
+                auto const np = pti.numParticles();
+                if (np == 0) { continue; }
+                auto const particle_data = pti.GetParticleTile().getConstParticleTileData();
+                amrex::ParallelFor(
+                    np, [=] AMREX_GPU_DEVICE (int ip) noexcept
+                    {
+                        auto const& p = particle_data.getSuperParticle(ip);
+                        for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {
+                            if ((save_lo[idim] && p.pos(idim) < plo[idim]) ||
+                                (save_hi[idim] && p.pos(idim) >= phi[idim]))
+                            {
+                                amrex::Gpu::Atomic::Exch(has_particles_outside_p+i, 1);
+                                return;
                             }
-                            return 0;
-                        });
-                }
+                        }
+                    });
             }
-            has_particles_outside[i] = amrex::get<0>(reduce_data.value());
         }
+    }
+    {
+        ABLASTR_PROFILE("ParticleBoundaryBuffer::gatherParticles::precheck");
+        amrex::Gpu::dtoh_memcpy_async(
+            has_particles_outside.data(), has_particles_outside_p,
+            numSpecies()*sizeof(int));
+        amrex::Gpu::streamSynchronize();
     }
 
     for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
