@@ -439,6 +439,13 @@ FullDiagnostics::InitializeFieldFunctorsRZopenPMD (int lev)
                 if (update_varnames) {
                     AddRZModesToOutputNames(std::string("j"+field_names[idir]), ncomp);
                 }
+            } else if ( m_varnames_fields[comp] == "j"+field_names[idir]+"_external" ){
+                m_all_field_functors[lev][comp] = std::make_unique<JFunctor>(
+                    idir, lev, m_crse_ratio, false, false, ncomp, true);
+                if (update_varnames) {
+                    AddRZModesToOutputNames(
+                        std::string("j"+field_names[idir]+"_external"), ncomp);
+                }
             } else if ( m_varnames_fields[comp] == "j"+field_names[idir]+"_displacement" ){
                 m_all_field_functors[lev][comp] = std::make_unique<JdispFunctor>(idir, lev, m_crse_ratio,
                                                             false, ncomp);
@@ -875,6 +882,9 @@ FullDiagnostics::InitializeFieldFunctors (int lev)
             } else if ( m_varnames[comp] == "j"+field_names[idir] ){
                 m_all_field_functors[lev][comp] = std::make_unique<JFunctor>(idir, lev, m_crse_ratio, true, deposit_current);
                 deposit_current = false;
+            } else if ( m_varnames[comp] == "j"+field_names[idir]+"_external" ){
+                m_all_field_functors[lev][comp] = std::make_unique<JFunctor>(
+                    idir, lev, m_crse_ratio, true, false, 1, true);
             } else if ( m_varnames[comp] == "j"+field_names[idir]+"_displacement" ) {
                     m_all_field_functors[lev][comp] = std::make_unique<JdispFunctor>(idir, lev, m_crse_ratio, true);
             } else if ( m_varnames[comp] == "A"+field_names[idir] ){

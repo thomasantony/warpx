@@ -1,0 +1,48 @@
+warpx.serialize_initial_conditions = 1
+warpx.do_dynamic_scheduling = 0
+warpx.verbose = 0
+
+max_step = 2
+geometry.dims = RZ
+geometry.prob_lo = 0.0 -4.0
+geometry.prob_hi = 8.0  4.0
+amr.n_cell = 8 8
+amr.max_grid_size = 4
+amr.blocking_factor = 4
+amr.max_level = 0
+
+boundary.field_lo = none pec
+boundary.field_hi = pec  pec
+boundary.particle_lo = none absorbing
+boundary.particle_hi = absorbing absorbing
+
+warpx.const_dt = 1.0e-9
+warpx.use_filter = 0
+warpx.n_rz_azimuthal_modes = 3
+algo.maxwell_solver = Yee
+algo.evolve_scheme = explicit
+
+# Smooth pure-m=1 rotating magnetization, center-field calibrated.
+warpx.rmf_source = rotating_magnetization_rz
+rmf.B0 = 2.0e-6
+rmf.radius = 2.0
+rmf.width = 3.0
+rmf.frequency = 2.5e8
+rmf.ramp_time = 2.0e-9
+rmf.sense = 1
+rmf.calibration = center_field
+
+diagnostics.diags_names = diag opmd
+diag.intervals = 1
+diag.diag_type = Full
+diag.format = plotfile
+diag.fields_to_plot = jr jt jz
+diag.plot_raw_fields = 1
+
+# Verify the standard openPMD thetaMode contract for total and external current.
+opmd.intervals = 1
+opmd.diag_type = Full
+opmd.format = openpmd
+opmd.openpmd_backend = h5
+opmd.file_prefix = diags/openpmd
+opmd.fields_to_plot = jr jt jz jr_external jt_external jz_external

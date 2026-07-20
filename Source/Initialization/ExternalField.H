@@ -60,6 +60,21 @@ struct ExternalFieldParams
     //! Whether an externally applied grid current was specified
     bool has_J_external_grid = false;
 
+    //! Whether the dedicated rotating m=1 RZ magnetization source was specified
+    bool has_rmf_source = false;
+    //! Peak magnetization amplitude of the RZ RMF source [A/m]
+    amrex::Real rmf_M0 = 0.0;
+    //! Radius of the smooth RZ RMF source [m]
+    amrex::Real rmf_radius = 0.0;
+    //! Width of the smooth RZ RMF source [m]
+    amrex::Real rmf_width = 0.0;
+    //! Rotation frequency of the RZ RMF source [Hz]
+    amrex::Real rmf_frequency = 0.0;
+    //! Raised-cosine ramp time of the RZ RMF source [s]
+    amrex::Real rmf_ramp_time = 0.0;
+    //! Rotation sense about +z
+    int rmf_sense = 1;
+
     //! User-defined parser to initialize x-component of the magnetic field on the grid
     std::unique_ptr<amrex::Parser> Bxfield_parser;
     //! User-defined parser to initialize y-component of the magnetic field on the grid

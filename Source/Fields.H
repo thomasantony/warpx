@@ -32,6 +32,7 @@ namespace warpx::fields
         Efield_fp_external, /**< Stores grid particle fields provided by the user as  through an openPMD file */
         Bfield_fp_external, /**< Stores grid particle fields provided by the user as  through an openPMD file */
         current_fp, /**< The current that is used as a source for the field solver */
+        current_fp_external, /**< External source current before addition to current_fp */
         current_fp_nodal, /**< Only used when using nodal current deposition */
         current_fp_vay,   /**< Only used when using Vay current deposition */
         current_buf, /**< Particles that are close to the edge of the MR patch (i.e. in the deposition buffer) deposit to this field. */
@@ -55,6 +56,7 @@ namespace warpx::fields
         Efield_cp,  /**< Only used with MR. The field that is updated by the field solver at each timestep, on the coarse patch of each level */
         Bfield_cp,  /**< Only used with MR. The field that is updated by the field solver at each timestep, on the coarse patch of each level */
         current_cp, /**< Only used with MR. The current that is used as a source for the field solver, on the coarse patch of each level */
+        current_cp_external, /**< External source current on the coarse patch */
         rho_cp, /**< Only used with MR. The charge density that is used as a source for the field solver, on the coarse patch of each level */
         F_cp,   /**< Only used with MR. Used for divE cleaning, on the coarse patch of each level */
         G_cp,   /**< Only used with MR. Used for divB cleaning, on the coarse patch of each level */
@@ -103,6 +105,7 @@ namespace warpx::fields
         FieldType::Efield_fp,
         FieldType::Bfield_fp,
         FieldType::current_fp,
+        FieldType::current_fp_external,
         FieldType::current_fp_nodal,
         FieldType::current_fp_vay,
         FieldType::current_buf,
@@ -119,6 +122,7 @@ namespace warpx::fields
         FieldType::Efield_cp,
         FieldType::Bfield_cp,
         FieldType::current_cp,
+        FieldType::current_cp_external,
         FieldType::Efield_cax,
         FieldType::Bfield_cax,
         FieldType::E_external_particle_field,

@@ -1099,7 +1099,8 @@ WarpX::ReadParameters ()
 
         bool const has_external_grid_current =
             m_p_ext_field_params->has_J_external_grid ||
-            m_p_ext_field_params->has_M_external_grid;
+            m_p_ext_field_params->has_M_external_grid ||
+            m_p_ext_field_params->has_rmf_source;
         WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
             !has_external_grid_current || !m_do_subcycling,
             "External J/M grid functions are not implemented with "
@@ -1125,6 +1126,27 @@ WarpX::ReadParameters ()
         utils::parser::queryWithParser(pp_warpx, "n_rz_azimuthal_modes", n_rz_azimuthal_modes);
         WARPX_ALWAYS_ASSERT_WITH_MESSAGE( n_rz_azimuthal_modes > 0,
             "The number of azimuthal modes (n_rz_azimuthal_modes) must be at least 1");
+
+        if (m_p_ext_field_params->has_rmf_source) {
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+                n_rz_azimuthal_modes >= 2,
+                "warpx.rmf_source requires warpx.n_rz_azimuthal_modes >= 2.");
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+                max_level == 0,
+                "warpx.rmf_source currently supports only amr.max_level=0.");
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+                electromagnetic_solver_id == ElectromagneticSolverAlgo::Yee &&
+                    grid_type == GridType::Staggered && evolve_scheme == EvolveScheme::Explicit,
+                "warpx.rmf_source requires the explicit Yee solver on a staggered grid.");
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+                !use_filter,
+                "warpx.rmf_source with the RZ Yee solver requires warpx.use_filter=0.");
+            auto const cell_size = CellSize(0);
+            amrex::Real const largest_cell = std::max(cell_size[0], cell_size[2]);
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+                m_p_ext_field_params->rmf_width >= 3.0_rt * largest_cell,
+                "rmf.width must span at least three cells in both r and z.");
+        }
 #endif
 
         // Check whether fluid species will be used
@@ -1278,7 +1300,8 @@ WarpX::ReadParameters ()
 
         bool const has_external_grid_current =
             m_p_ext_field_params->has_J_external_grid ||
-            m_p_ext_field_params->has_M_external_grid;
+            m_p_ext_field_params->has_M_external_grid ||
+            m_p_ext_field_params->has_rmf_source;
         WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
             !has_external_grid_current || current_deposition_algo != CurrentDepositionAlgo::Vay,
             "External J/M grid functions are not implemented with "
@@ -2527,6 +2550,16 @@ WarpX::AllocLevelMFs (int lev, const BoxArray& ba, const DistributionMapping& dm
     m_fields.alloc_init(FieldType::current_fp, Direction{0}, lev, amrex::convert(ba, jx_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
     m_fields.alloc_init(FieldType::current_fp, Direction{1}, lev, amrex::convert(ba, jy_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
     m_fields.alloc_init(FieldType::current_fp, Direction{2}, lev, amrex::convert(ba, jz_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
+    if (m_p_ext_field_params->has_J_external_grid ||
+        m_p_ext_field_params->has_M_external_grid || m_p_ext_field_params->has_rmf_source)
+    {
+        m_fields.alloc_init(FieldType::current_fp_external, Direction{0}, lev,
+            amrex::convert(ba, jx_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
+        m_fields.alloc_init(FieldType::current_fp_external, Direction{1}, lev,
+            amrex::convert(ba, jy_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
+        m_fields.alloc_init(FieldType::current_fp_external, Direction{2}, lev,
+            amrex::convert(ba, jz_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
+    }
 
     if (m_implicit_solver) {
         // Current from suborbit particles are deposited to the standard current_fp container.
@@ -2976,6 +3009,16 @@ WarpX::AllocLevelMFs (int lev, const BoxArray& ba, const DistributionMapping& dm
         m_fields.alloc_init(FieldType::current_cp, Direction{0}, lev, amrex::convert(cba, jx_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
         m_fields.alloc_init(FieldType::current_cp, Direction{1}, lev, amrex::convert(cba, jy_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
         m_fields.alloc_init(FieldType::current_cp, Direction{2}, lev, amrex::convert(cba, jz_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
+        if (m_p_ext_field_params->has_J_external_grid ||
+            m_p_ext_field_params->has_M_external_grid || m_p_ext_field_params->has_rmf_source)
+        {
+            m_fields.alloc_init(FieldType::current_cp_external, Direction{0}, lev,
+                amrex::convert(cba, jx_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
+            m_fields.alloc_init(FieldType::current_cp_external, Direction{1}, lev,
+                amrex::convert(cba, jy_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
+            m_fields.alloc_init(FieldType::current_cp_external, Direction{2}, lev,
+                amrex::convert(cba, jz_nodal_flag), dm, ncomps, ngJ, 0.0_rt);
+        }
 
         if (rho_ncomps > 0) {
             m_fields.alloc_init(FieldType::rho_cp,

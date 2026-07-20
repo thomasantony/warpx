@@ -2557,6 +2557,63 @@ are applied to the grid directly. In particular, these fields can be seen in the
     solver on a three-dimensional Cartesian staggered grid, without
     mesh-refinement subcycling or Vay current deposition.
 
+.. pp:param:: warpx.rmf_source
+    :type: string
+    :optional:
+
+    Set to ``rotating_magnetization_rz`` to drive a smooth, pure-:math:`m=1`
+    rotating magnetization in RZ. The source is evaluated on the magnetic-field
+    Yee staggering at the current half time step, and its cylindrical discrete
+    curl is added to the solver current. The source profile is
+
+    .. math::
+
+       \boldsymbol{M}(r,\theta,z,t) = M_0 R(t)\,\sigma(r,z)
+       [\hat{\boldsymbol{x}}\cos(\phi(t)) +
+       \hat{\boldsymbol{y}}\sin(\phi(t))],
+
+    with :math:`\sigma = [1-\tanh((r^2+z^2-a^2)/(2aw))]/2` and a raised-cosine
+    ramp :math:`R(t)`. This source requires explicit single-level RZ Yee on a
+    staggered grid, at least two azimuthal modes, ``warpx.use_filter = 0``, and
+    a source width spanning at least three cells in both ``r`` and ``z``.
+
+.. pp:param:: rmf.B0/M0
+    :link_aliases:
+        rmf.B0
+        rmf.M0
+    :type: float
+
+    Specify exactly one source amplitude. ``rmf.B0`` is the requested center
+    magnetic field in tesla and uses ``rmf.calibration = center_field``.
+    ``rmf.M0`` directly sets the peak magnetization in :math:`\mathrm{A}/\mathrm{m}`.
+
+.. pp:param:: rmf.radius/width
+    :link_aliases:
+        rmf.radius
+        rmf.width
+    :type: float
+
+    Positive source radius and transition width in meters.
+
+.. pp:param:: rmf.frequency/ramp_time
+    :link_aliases:
+        rmf.frequency
+        rmf.ramp_time
+    :type: float
+
+    Nonnegative rotation frequency in hertz and raised-cosine ramp time in seconds.
+
+.. pp:param:: rmf.sense
+    :type: ``-1`` or ``1``
+
+    Rotation sense about the positive ``z`` axis.
+
+.. pp:param:: rmf.calibration
+    :type: string
+    :default: ``center_field``
+
+    Source calibration policy. Only ``center_field`` is currently supported.
+
 .. pp:param:: warpx.E/B_external_grid
     :link_aliases:
         warpx.E_external_grid
@@ -4319,7 +4376,9 @@ In-situ capabilities can be used by turning on Sensei or Ascent (provided they a
     Note that ``phi`` will only be written out when ``do_electrostatic==labframe``.
     Also, note that for :pp:param:`<diag_name>.diag_type = BackTransformed`, the only scalar field currently supported is ``rho``.
     Possible vector field components in Cartesian geometry: ``Ex`` ``Ey`` ``Ez`` ``Bx`` ``By`` ``Bz`` ``jx`` ``jy`` ``jz``.
+    The external source current can be written as ``jx_external`` ``jy_external`` ``jz_external`` when an external grid current source is configured.
     Possible vector field components in RZ and RCYLINDER geometry: ``Er`` ``Et`` ``Ez`` ``Br`` ``Bt`` ``Bz`` ``jr`` ``jt`` ``jz``.
+    In RZ, the external source current can be written as ``jr_external`` ``jt_external`` ``jz_external``; openPMD stores these modes in the standard ``j_external`` thetaMode mesh record.
     Possible vector field components in RSPHERE geometry: ``Er`` ``Et`` ``Ep`` ``Br`` ``Bt`` ``Bp`` ``jr`` ``jt`` ``jp``.
     The default :pp:param:`<diag_name>.fields_to_plot` is to write all possible field components for the geometry.
     When the special value ``none`` is specified, no fields are written out.
