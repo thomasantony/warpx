@@ -1811,10 +1811,8 @@ namespace {
                         }
                     } else {
                         Jzfab(i,j,k,0) += 4.0_rt * Mtheta(i,j,k,0) / dr;
-                        for (int m = 1; m < nmodes; ++m) {
-                            Jzfab(i,j,k,2*m-1) = 0.0_rt;
-                            Jzfab(i,j,k,2*m) = 0.0_rt;
-                        }
+                        // The regular higher-mode curl contribution is zero on axis.
+                        // Leave those components untouched because this routine is additive.
                     }
                 }
             );

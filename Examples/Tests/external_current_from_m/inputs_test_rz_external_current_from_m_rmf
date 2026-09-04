@@ -22,7 +22,7 @@ warpx.n_rz_azimuthal_modes = 3
 algo.maxwell_solver = Yee
 algo.evolve_scheme = explicit
 
-# Smooth pure-m=1 rotating magnetization, center-field calibrated.
+# Smooth pure-m=1 rotating magnetization, nominal center-field calibrated.
 warpx.rmf_source = rotating_magnetization_rz
 rmf.B0 = 2.0e-6
 rmf.radius = 2.0

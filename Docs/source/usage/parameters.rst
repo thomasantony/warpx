@@ -2583,8 +2583,10 @@ are applied to the grid directly. In particular, these fields can be seen in the
         rmf.M0
     :type: float
 
-    Specify exactly one source amplitude. ``rmf.B0`` is the requested center
-    magnetic field in tesla and uses ``rmf.calibration = center_field``.
+    Specify exactly one source amplitude. ``rmf.B0`` is the nominal continuum,
+    magnetostatic center magnetic field in tesla and uses
+    ``rmf.calibration = center_field``. The realized field in a time-dependent,
+    discretized, finite-domain simulation can differ from this value.
     ``rmf.M0`` directly sets the peak magnetization in :math:`\mathrm{A}/\mathrm{m}`.
 
 .. pp:param:: rmf.radius/width
