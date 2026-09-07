@@ -90,11 +90,10 @@ namespace
         for (amrex::MFIter mfi(layout); mfi.isValid(); ++mfi) {
             auto const box = amrex::enclosedCells(mfi.validbox());
             auto const function = factory(mfi);
-            ops.eval(box, data,
-                [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept -> Tuple
-                {
-                    return function(i, j, k);
-                });
+            // Forward the device callable directly. An extended CUDA lambda
+            // here would enclose the function-local Factory type in its
+            // parent function's template arguments, which nvcc rejects.
+            ops.eval(box, data, function);
         }
         auto const result = data.value();
         Pair out{amrex::get<0>(result), amrex::get<1>(result)};
