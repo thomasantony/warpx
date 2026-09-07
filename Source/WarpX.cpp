@@ -10,6 +10,7 @@
  * License: BSD-3-Clause-LBNL
  */
 #include "WarpX.H"
+#include "Diagnostics/NativeYeeEnergyBalance.H"
 
 #include "BoundaryConditions/FieldBoundaries.H"
 #include "BoundaryConditions/PEC_Insulator.H"
@@ -348,6 +349,17 @@ WarpX::WarpX ()
     dt.resize(nlevs_max, std::numeric_limits<Real>::max());
 
     mypc = std::make_unique<MultiParticleContainer>(this);
+
+    {
+        amrex::ParmParse pp_warpx("warpx");
+        bool native_yee_energy_balance = false;
+        pp_warpx.query("native_yee_energy_balance", native_yee_energy_balance);
+        if (native_yee_energy_balance) {
+            std::string path = "diags/native_yee_energy_balance.csv";
+            pp_warpx.query("native_yee_energy_balance_path", path);
+            m_native_yee_energy_balance = std::make_unique<NativeYeeEnergyBalance>(*this, path);
+        }
+    }
 
     // Loop over species (particles and lasers)
     // and set current injection position per species

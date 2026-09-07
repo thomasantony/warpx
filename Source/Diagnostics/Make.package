@@ -1,4 +1,5 @@
 CEXE_sources += MultiDiagnostics.cpp
+CEXE_sources += NativeYeeEnergyBalance.cpp
 CEXE_sources += Diagnostics.cpp
 CEXE_sources += FullDiagnostics.cpp
 CEXE_sources += WarpXIO.cpp

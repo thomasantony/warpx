@@ -1,0 +1,63 @@
+# Same deterministic periodic field fixture used to qualify the S500 instrument.
+max_step = 16
+geometry.dims = 3
+geometry.prob_lo = -8 -8 -8
+geometry.prob_hi = 8 8 8
+amr.n_cell = 16 16 16
+amr.max_level = 0
+amr.max_grid_size = 8
+amr.blocking_factor = 8
+boundary.field_lo = periodic periodic periodic
+boundary.field_hi = periodic periodic periodic
+boundary.particle_lo = periodic periodic periodic
+boundary.particle_hi = periodic periodic periodic
+warpx.const_dt = 1.5e-9
+warpx.grid_type = staggered
+algo.evolve_scheme = explicit
+algo.maxwell_solver = Yee
+algo.current_deposition = villasenor
+algo.field_gathering = energy-conserving
+algo.particle_pusher = boris
+warpx.do_current_centering = 0
+warpx.do_dive_cleaning = 0
+warpx.do_divb_cleaning = 0
+warpx.do_initial_div_cleaning = 0
+warpx.do_pml_dive_cleaning = 0
+warpx.do_pml_divb_cleaning = 0
+warpx.synchronize_velocity_for_diagnostics = 0
+warpx.use_filter = 1
+warpx.filter_npass_each_dir = 2 2 2
+warpx.use_filter_compensation = 0
+warpx.native_yee_energy_balance = 1
+warpx.native_yee_energy_balance_path = diags/native_yee_energy_balance.csv
+warpx.random_seed = 13579
+warpx.verbose = 0
+
+# Empty species inventory. particle_shape is unread with zero species and must
+# be omitted when amrex.abort_on_unused_inputs is active.
+# Nonuniform transverse wave: 1 V/m and 1/clight T initial amplitudes.
+warpx.E_ext_grid_init_style = parse_E_ext_grid_function
+warpx.Ex_external_grid_function(x,y,z) = 0
+warpx.Ey_external_grid_function(x,y,z) = "sin(2*pi*x/16)"
+warpx.Ez_external_grid_function(x,y,z) = 0
+warpx.B_ext_grid_init_style = parse_B_ext_grid_function
+warpx.Bx_external_grid_function(x,y,z) = 0
+warpx.By_external_grid_function(x,y,z) = 0
+warpx.Bz_external_grid_function(x,y,z) = "sin(2*pi*x/16)/clight"
+
+warpx.reduced_diags_names = FieldEnergy FieldPoyntingFlux
+reduced_diags.path = diags/reduced/
+reduced_diags.precision = 17
+FieldEnergy.type = FieldEnergy
+FieldEnergy.intervals = 1
+FieldPoyntingFlux.type = FieldPoyntingFlux
+FieldPoyntingFlux.intervals = 1
+
+diagnostics.diags_names = terminal_checkpoint
+terminal_checkpoint.diag_type = Full
+terminal_checkpoint.format = checkpoint
+terminal_checkpoint.intervals = 16:16
+terminal_checkpoint.dump_last_timestep = 0
+terminal_checkpoint.file_prefix = checkpoints/periodic_field_terminal_
+terminal_checkpoint.file_min_digits = 6
+terminal_checkpoint.write_species = 1

@@ -12,6 +12,7 @@
 
 #include "BoundaryConditions/PML.H"
 #include "Diagnostics/MultiDiagnostics.H"
+#include "Diagnostics/NativeYeeEnergyBalance.H"
 #include "Diagnostics/ReducedDiags/MultiReducedDiags.H"
 #include "EmbeddedBoundary/Enabled.H"
 #include "Fields.H"
@@ -273,7 +274,9 @@ WarpX::Evolve (int numsteps)
             }
         }
 
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->BeforeParticleBoundary(); }
         HandleParticlesAtBoundaries(step, cur_time, num_moved);
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->AfterParticleBoundary(); }
 
         // Apply particle thermalizer (no-op until implemented)
         if (m_particle_thermalizer.defined()) {
@@ -519,6 +522,10 @@ WarpX::OneStep_nosub (
 {
     ABLASTR_PROFILE("WarpX::OneStep_nosub()");
 
+    if (m_native_yee_energy_balance) {
+        m_native_yee_energy_balance->BeginStep(a_step, a_cur_time, a_dt);
+    }
+
     // Push particle from x^{n} to x^{n+1}
     //               from p^{n-1/2} to p^{n+1/2}
     // Deposit current j^{n+1/2}
@@ -563,7 +570,9 @@ WarpX::OneStep_nosub (
         );
     }
 
+    if (m_native_yee_energy_balance) { m_native_yee_energy_balance->AfterParticlePush(); }
     ExecutePythonCallback("afterdeposition");
+    if (m_native_yee_energy_balance) { m_native_yee_energy_balance->CopyRawCurrent(); }
 
     // Synchronize J and rho:
     // filter (if used), exchange guard cells, interpolate across MR levels
@@ -616,8 +625,11 @@ WarpX::OneStep_nosub (
         FillBoundaryF(guard_cells.ng_FieldSolverF);
         FillBoundaryG(guard_cells.ng_FieldSolverG);
 
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->BeforeFirstB(); }
         EvolveB(0.5_rt * dt[0], SubcyclingHalf::FirstHalf, a_cur_time); // We now have B^{n+1/2}
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->AfterFirstB(); }
         FillBoundaryB(guard_cells.ng_FieldSolver, WarpX::sync_nodal_points);
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->AfterFirstBExchange(); }
 
         if (m_em_solver_medium == MediumForEM::Vacuum) {
             // vacuum medium
@@ -628,11 +640,15 @@ WarpX::OneStep_nosub (
         } else {
             WARPX_ABORT_WITH_MESSAGE("Medium for EM is unknown");
         }
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->AfterE(); }
         FillBoundaryE(guard_cells.ng_FieldSolver, WarpX::sync_nodal_points);
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->AfterEExchange(); }
 
         EvolveF(0.5_rt * dt[0], /*rho_comp=*/1);
         EvolveG(0.5_rt * dt[0]);
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->BeforeSecondB(); }
         EvolveB(0.5_rt * dt[0], SubcyclingHalf::SecondHalf, a_cur_time + 0.5_rt * dt[0]); // We now have B^{n+1}
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->AfterSecondB(); }
 
         if (do_pml) {
             DampPML();
@@ -647,6 +663,7 @@ WarpX::OneStep_nosub (
         if (m_safe_guard_cells) {
             FillBoundaryB(guard_cells.ng_alloc_EB);
         }
+        if (m_native_yee_energy_balance) { m_native_yee_energy_balance->AfterFinalExchange(); }
     } // !PSATD
 
     ExecutePythonCallback("afterEsolve");

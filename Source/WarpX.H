@@ -82,9 +82,13 @@
 #include <variant>
 #include <vector>
 
+class NativeYeeEnergyBalance;
+
 class WARPX_EXPORT WarpX
     : public amrex::AmrCore
 {
+    friend class NativeYeeEnergyBalance;
+
 public:
     static WarpX& GetInstance ();
 
@@ -1215,6 +1219,9 @@ private:
 
     // Particle container
     std::unique_ptr<MultiParticleContainer> mypc;
+
+    // Default-off passive hooks; never participate in DoDiags scheduling.
+    std::unique_ptr<NativeYeeEnergyBalance> m_native_yee_energy_balance;
     std::unique_ptr<MultiDiagnostics> multi_diags;
 
     // Particle thermalizer configuration (constructed from inputs)

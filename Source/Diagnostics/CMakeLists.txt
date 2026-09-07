@@ -6,6 +6,7 @@ foreach(D IN LISTS WarpX_DIMS)
         FieldIO.cpp
         FullDiagnostics.cpp
         MultiDiagnostics.cpp
+        NativeYeeEnergyBalance.cpp
         ParticleIO.cpp
         WarpXIO.cpp
         WarpXOpenPMD.cpp
